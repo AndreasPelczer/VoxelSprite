@@ -3,8 +3,7 @@
 //  VoxelSprite
 //
 //  Verwaltet das Block-Projekt mit seinen 6 Faces.
-//  Ersetzt den FrameViewModel aus PlanktonSprite.
-//  Zuständig für: aktives Face, Projekt-Operationen, Autosave.
+//  Zuständig für: aktives Face, Frame-Navigation, Projekt-Operationen, Autosave.
 //
 
 import SwiftUI
@@ -20,6 +19,9 @@ class BlockViewModel: ObservableObject {
     /// Das aktuell bearbeitete Face
     @Published var activeFaceType: FaceType = .north
 
+    /// Der aktive Frame-Index (für Animation/CTM)
+    @Published var activeFrameIndex: Int = 0
+
     /// Pfad der aktuell geöffneten Datei (nil = noch nicht gespeichert)
     @Published var currentFileURL: URL?
 
@@ -31,9 +33,11 @@ class BlockViewModel: ObservableObject {
 
     // MARK: - Computed Properties
 
-    /// Das Canvas des aktiven Faces
+    /// Das Canvas des aktiven Faces im aktiven Frame
     var activeCanvas: PixelCanvas {
-        project.canvas(for: activeFaceType)
+        let face = project.face(for: activeFaceType)
+        let idx = min(activeFrameIndex, face.frames.count - 1)
+        return idx >= 0 ? face.frames[idx] : PixelCanvas(gridSize: project.gridSize)
     }
 
     /// Das aktive Face
@@ -46,11 +50,19 @@ class BlockViewModel: ObservableObject {
         project.orderedFaces
     }
 
+    /// Anzahl Frames des aktiven Faces
+    var activeFrameCount: Int {
+        activeFace.frameCount
+    }
+
     // MARK: - Canvas aktualisieren
 
-    /// Schreibt ein verändertes Canvas zurück in das aktive Face
+    /// Schreibt ein verändertes Canvas zurück in den aktiven Frame
     func updateActiveCanvas(_ canvas: PixelCanvas) {
-        project.updateCanvas(for: activeFaceType, canvas: canvas)
+        let count = project.faces[activeFaceType]?.frames.count ?? 0
+        let idx = min(activeFrameIndex, count - 1)
+        guard idx >= 0 else { return }
+        project.faces[activeFaceType]?.frames[idx] = canvas
     }
 
     // MARK: - Face-Navigation
@@ -58,6 +70,7 @@ class BlockViewModel: ObservableObject {
     /// Wechselt zum angegebenen Face
     func selectFace(_ type: FaceType) {
         activeFaceType = type
+        activeFrameIndex = 0
     }
 
     /// Wechselt zum nächsten Face
@@ -66,6 +79,7 @@ class BlockViewModel: ObservableObject {
         guard let currentIndex = allFaces.firstIndex(of: activeFaceType) else { return }
         let nextIndex = (currentIndex + 1) % allFaces.count
         activeFaceType = allFaces[nextIndex]
+        activeFrameIndex = 0
     }
 
     /// Wechselt zum vorherigen Face
@@ -74,6 +88,57 @@ class BlockViewModel: ObservableObject {
         guard let currentIndex = allFaces.firstIndex(of: activeFaceType) else { return }
         let prevIndex = (currentIndex - 1 + allFaces.count) % allFaces.count
         activeFaceType = allFaces[prevIndex]
+        activeFrameIndex = 0
+    }
+
+    // MARK: - Frame-Management
+
+    /// Wechselt zum angegebenen Frame
+    func selectFrame(_ index: Int) {
+        let count = project.faces[activeFaceType]?.frames.count ?? 1
+        activeFrameIndex = max(0, min(index, count - 1))
+    }
+
+    /// Fügt einen neuen leeren Frame hinzu
+    func addFrame() {
+        let gridSize = project.gridSize
+        project.faces[activeFaceType]?.frames.append(PixelCanvas(gridSize: gridSize))
+        activeFrameIndex = (project.faces[activeFaceType]?.frames.count ?? 1) - 1
+    }
+
+    /// Dupliziert den aktuellen Frame
+    func duplicateFrame() {
+        guard let face = project.faces[activeFaceType],
+              activeFrameIndex < face.frames.count else { return }
+        let copy = face.frames[activeFrameIndex]
+        project.faces[activeFaceType]?.frames.insert(copy, at: activeFrameIndex + 1)
+        activeFrameIndex += 1
+    }
+
+    /// Löscht den aktuellen Frame (mindestens 1 Frame muss bleiben)
+    func deleteFrame() {
+        guard let face = project.faces[activeFaceType],
+              face.frames.count > 1,
+              activeFrameIndex < face.frames.count else { return }
+        project.faces[activeFaceType]?.frames.remove(at: activeFrameIndex)
+        if activeFrameIndex >= (project.faces[activeFaceType]?.frames.count ?? 1) {
+            activeFrameIndex = max(0, (project.faces[activeFaceType]?.frames.count ?? 1) - 1)
+        }
+    }
+
+    /// Verschiebt einen Frame nach links
+    func moveFrameLeft() {
+        guard activeFrameIndex > 0 else { return }
+        project.faces[activeFaceType]?.frames.swapAt(activeFrameIndex, activeFrameIndex - 1)
+        activeFrameIndex -= 1
+    }
+
+    /// Verschiebt einen Frame nach rechts
+    func moveFrameRight() {
+        guard let face = project.faces[activeFaceType],
+              activeFrameIndex < face.frames.count - 1 else { return }
+        project.faces[activeFaceType]?.frames.swapAt(activeFrameIndex, activeFrameIndex + 1)
+        activeFrameIndex += 1
     }
 
     // MARK: - Template-Operationen
@@ -90,6 +155,7 @@ class BlockViewModel: ObservableObject {
     func newProject(gridSize: Int = 16, template: BlockTemplate = .custom) {
         project = BlockProject(gridSize: gridSize, template: template)
         activeFaceType = .north
+        activeFrameIndex = 0
         currentFileURL = nil
     }
 
@@ -116,6 +182,7 @@ class BlockViewModel: ObservableObject {
         let file = try JSONDecoder().decode(VoxelProjectFile.self, from: data)
         project = file.toProject()
         activeFaceType = .north
+        activeFrameIndex = 0
         currentFileURL = url
     }
 

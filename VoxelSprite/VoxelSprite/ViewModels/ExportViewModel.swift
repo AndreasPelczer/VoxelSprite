@@ -4,6 +4,9 @@
 //
 //  Zuständig für Minecraft Resourcepack Export:
 //  - Einzelne Face-PNGs (16×16)
+//  - Animierte Texturen (Vertikaler Strip + .mcmeta)
+//  - Blockstate mit Rotations-Varianten
+//  - CTM Export (Tiles + .properties)
 //  - block.json / blockstate.json
 //  - Komplettes Resourcepack-ZIP
 //
@@ -96,18 +99,43 @@ class ExportViewModel: ObservableObject {
         let faces = FaceType.allCases
 
         for (index, faceType) in faces.enumerated() {
-            let canvas = project.canvas(for: faceType)
-            guard let cgImage = renderCanvasToCGImage(canvas, gridSize: project.gridSize) else {
-                throw ExportError.frameRenderFailed
-            }
-            guard let pngData = cgImageToPNGData(cgImage) else {
-                throw ExportError.pngEncodingFailed
-            }
+            let face = project.face(for: faceType)
 
-            let fileName = "\(project.name)_\(faceType.rawValue.lowercased()).png"
-            let url = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
-            try pngData.write(to: url, options: .atomic)
-            urls.append(url)
+            if face.isAnimated && project.ctmMethod == .none {
+                // Animierte Textur: Vertikaler Strip
+                guard let stripImage = renderAnimatedStrip(face: face, gridSize: project.gridSize) else {
+                    throw ExportError.frameRenderFailed
+                }
+                guard let pngData = cgImageToPNGData(stripImage) else {
+                    throw ExportError.pngEncodingFailed
+                }
+
+                let fileName = "\(project.name)_\(faceType.rawValue.lowercased()).png"
+                let url = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+                try pngData.write(to: url, options: .atomic)
+                urls.append(url)
+
+                // .mcmeta
+                let mcmetaData = try createAnimationMcmetaData(face: face)
+                let mcmetaURL = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("\(fileName).mcmeta")
+                try mcmetaData.write(to: mcmetaURL, options: .atomic)
+                urls.append(mcmetaURL)
+            } else {
+                // Statische Textur (erster Frame)
+                let canvas = face.canvas
+                guard let cgImage = renderCanvasToCGImage(canvas, gridSize: project.gridSize) else {
+                    throw ExportError.frameRenderFailed
+                }
+                guard let pngData = cgImageToPNGData(cgImage) else {
+                    throw ExportError.pngEncodingFailed
+                }
+
+                let fileName = "\(project.name)_\(faceType.rawValue.lowercased()).png"
+                let url = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+                try pngData.write(to: url, options: .atomic)
+                urls.append(url)
+            }
 
             let progress = Double(index + 1) / Double(faces.count)
             DispatchQueue.main.async { [weak self] in
@@ -196,7 +224,7 @@ class ExportViewModel: ObservableObject {
             self?.exportStatus = "Blockstate…"
         }
 
-        // 3. Blockstate JSON
+        // 3. Blockstate JSON (mit Rotations-Varianten)
         let blockstateJSON = createBlockstate(project: project)
         let blockstateData = try JSONSerialization.data(withJSONObject: blockstateJSON, options: .prettyPrinted)
         try blockstateData.write(to: blockstatesDir.appendingPathComponent("\(project.name).json"), options: .atomic)
@@ -211,6 +239,15 @@ class ExportViewModel: ObservableObject {
         let packMetaData = try JSONSerialization.data(withJSONObject: packMeta, options: .prettyPrinted)
         try packMetaData.write(to: packDir.appendingPathComponent("pack.mcmeta"), options: .atomic)
 
+        // 5. CTM Export (wenn aktiviert)
+        if project.ctmMethod != .none {
+            DispatchQueue.main.async { [weak self] in
+                self?.exportProgress = 0.9
+                self?.exportStatus = "CTM…"
+            }
+            try exportCTMFiles(project: project, packDir: packDir)
+        }
+
         return packDir
     }
 
@@ -222,16 +259,36 @@ class ExportViewModel: ObservableObject {
         let uniqueTextures = findUniqueTextures(project: project)
 
         for (faceType, textureName) in uniqueTextures {
-            let canvas = project.canvas(for: faceType)
-            guard let cgImage = renderCanvasToCGImage(canvas, gridSize: project.gridSize) else {
-                throw ExportError.frameRenderFailed
-            }
-            guard let pngData = cgImageToPNGData(cgImage) else {
-                throw ExportError.pngEncodingFailed
-            }
+            let face = project.face(for: faceType)
 
-            let fileName = "\(textureName).png"
-            try pngData.write(to: directory.appendingPathComponent(fileName), options: .atomic)
+            if face.isAnimated && project.ctmMethod == .none {
+                // Animierte Textur: Vertikaler Strip + .mcmeta
+                guard let stripImage = renderAnimatedStrip(face: face, gridSize: project.gridSize) else {
+                    throw ExportError.frameRenderFailed
+                }
+                guard let pngData = cgImageToPNGData(stripImage) else {
+                    throw ExportError.pngEncodingFailed
+                }
+
+                let fileName = "\(textureName).png"
+                try pngData.write(to: directory.appendingPathComponent(fileName), options: .atomic)
+
+                // .mcmeta
+                let mcmetaData = try createAnimationMcmetaData(face: face)
+                try mcmetaData.write(to: directory.appendingPathComponent("\(fileName).mcmeta"), options: .atomic)
+            } else {
+                // Statische Textur (erster Frame)
+                let canvas = face.canvas
+                guard let cgImage = renderCanvasToCGImage(canvas, gridSize: project.gridSize) else {
+                    throw ExportError.frameRenderFailed
+                }
+                guard let pngData = cgImageToPNGData(cgImage) else {
+                    throw ExportError.pngEncodingFailed
+                }
+
+                let fileName = "\(textureName).png"
+                try pngData.write(to: directory.appendingPathComponent(fileName), options: .atomic)
+            }
         }
 
         // Textur-Zuordnung für alle Faces
@@ -280,6 +337,144 @@ class ExportViewModel: ObservableObject {
         return uniqueTextures.first?.1 ?? "unknown"
     }
 
+    // MARK: - Animation Rendering
+
+    /// Rendert alle Frames eines Faces als vertikalen Strip (Minecraft-Format)
+    private func renderAnimatedStrip(face: BlockFace, gridSize: Int) -> CGImage? {
+        let frameCount = face.frames.count
+        guard frameCount > 0 else { return nil }
+
+        let width = gridSize
+        let totalHeight = gridSize * frameCount
+
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: totalHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+
+        if !transparentBackground {
+            context.setFillColor(red: 1, green: 1, blue: 1, alpha: 1)
+            context.fill(CGRect(x: 0, y: 0, width: width, height: totalHeight))
+        }
+
+        for (frameIndex, canvas) in face.frames.enumerated() {
+            // CGContext hat Ursprung unten-links
+            // Frame 0 soll oben sein, also y-Offset umkehren
+            let yOffset = (frameCount - 1 - frameIndex) * gridSize
+
+            for y in 0..<gridSize {
+                for x in 0..<gridSize {
+                    if let color = canvas.pixel(at: x, y: y),
+                       let c = color.cgColorComponents {
+                        context.setFillColor(red: c.r, green: c.g, blue: c.b, alpha: c.a)
+                        context.fill(CGRect(
+                            x: x,
+                            y: yOffset + (gridSize - 1 - y),
+                            width: 1,
+                            height: 1
+                        ))
+                    }
+                }
+            }
+        }
+
+        return context.makeImage()
+    }
+
+    /// Erstellt .mcmeta Daten für Animation
+    private func createAnimationMcmetaData(face: BlockFace) throws -> Data {
+        let mcmeta = createAnimationMcmeta(face: face)
+        return try JSONSerialization.data(withJSONObject: mcmeta, options: .prettyPrinted)
+    }
+
+    private func createAnimationMcmeta(face: BlockFace) -> [String: Any] {
+        var animation: [String: Any] = [
+            "frametime": face.frameTime
+        ]
+        if face.interpolate {
+            animation["interpolate"] = true
+        }
+        return ["animation": animation]
+    }
+
+    // MARK: - CTM Export
+
+    /// Exportiert CTM-Dateien (OptiFine/Continuity kompatibel)
+    private func exportCTMFiles(project: BlockProject, packDir: URL) throws {
+        let fm = FileManager.default
+
+        // CTM-Verzeichnis: assets/{namespace}/optifine/ctm/{blockname}/
+        let ctmDir = packDir
+            .appendingPathComponent("assets/\(project.namespace)/optifine/ctm/\(project.name)")
+        try fm.createDirectory(at: ctmDir, withIntermediateDirectories: true)
+
+        // Primäres Face bestimmen (für Tiles)
+        let primaryFaceType = determinePrimaryFace(project: project)
+        let face = project.face(for: primaryFaceType)
+
+        // Tiles exportieren
+        for (index, tileCanvas) in face.frames.enumerated() {
+            guard let cgImage = renderCanvasToCGImage(tileCanvas, gridSize: project.gridSize) else {
+                throw ExportError.frameRenderFailed
+            }
+            guard let pngData = cgImageToPNGData(cgImage) else {
+                throw ExportError.pngEncodingFailed
+            }
+            try pngData.write(to: ctmDir.appendingPathComponent("\(index).png"), options: .atomic)
+        }
+
+        // Properties-Datei
+        let properties = createCTMProperties(project: project, tileCount: face.frames.count)
+        try properties.write(
+            to: ctmDir.appendingPathComponent("\(project.name).properties"),
+            atomically: true,
+            encoding: .utf8
+        )
+    }
+
+    /// Bestimmt das primäre Face für CTM-Tiles
+    private func determinePrimaryFace(project: BlockProject) -> FaceType {
+        switch project.template {
+        case .fullBlock:  return .north
+        case .grassStyle: return .north  // Seiten-Textur
+        case .pillar:     return .north  // Seiten-Textur
+        case .slab:       return .north
+        case .custom:     return .north
+        }
+    }
+
+    /// Erstellt die CTM .properties Datei
+    private func createCTMProperties(project: BlockProject, tileCount: Int) -> String {
+        var lines: [String] = []
+
+        switch project.ctmMethod {
+        case .none:
+            return ""
+
+        case .random:
+            lines.append("method=random")
+            if tileCount > 0 {
+                lines.append("tiles=0-\(tileCount - 1)")
+            }
+
+        case .repeat_:
+            lines.append("method=repeat")
+            if tileCount > 0 {
+                lines.append("tiles=0-\(tileCount - 1)")
+            }
+            lines.append("width=\(project.ctmRepeatWidth)")
+            lines.append("height=\(project.ctmRepeatHeight)")
+        }
+
+        lines.append("matchBlocks=\(project.namespace):\(project.name)")
+        return lines.joined(separator: "\n") + "\n"
+    }
+
     // MARK: - Minecraft JSON Generatoren
 
     private func createBlockModel(project: BlockProject, textureNames: [FaceType: String]) -> [String: Any] {
@@ -319,14 +514,52 @@ class ExportViewModel: ObservableObject {
         ]
     }
 
+    /// Blockstate JSON mit Rotations-Varianten
     private func createBlockstate(project: BlockProject) -> [String: Any] {
-        return [
-            "variants": [
-                "": [
-                    "model": "\(project.namespace):block/\(project.name)"
+        let modelRef = "\(project.namespace):block/\(project.name)"
+
+        switch project.rotation {
+        case .none:
+            return [
+                "variants": [
+                    "": ["model": modelRef]
                 ]
             ]
-        ]
+
+        case .directional:
+            return [
+                "variants": [
+                    "facing=north": ["model": modelRef],
+                    "facing=east":  ["model": modelRef, "y": 90],
+                    "facing=south": ["model": modelRef, "y": 180],
+                    "facing=west":  ["model": modelRef, "y": 270]
+                ]
+            ]
+
+        case .sixWay:
+            return [
+                "variants": [
+                    "facing=north": ["model": modelRef],
+                    "facing=east":  ["model": modelRef, "y": 90],
+                    "facing=south": ["model": modelRef, "y": 180],
+                    "facing=west":  ["model": modelRef, "y": 270],
+                    "facing=up":    ["model": modelRef, "x": 270],
+                    "facing=down":  ["model": modelRef, "x": 90]
+                ]
+            ]
+
+        case .random:
+            return [
+                "variants": [
+                    "": [
+                        ["model": modelRef],
+                        ["model": modelRef, "y": 90],
+                        ["model": modelRef, "y": 180],
+                        ["model": modelRef, "y": 270]
+                    ]
+                ]
+            ]
+        }
     }
 
     private func createPackMeta(project: BlockProject) -> [String: Any] {
