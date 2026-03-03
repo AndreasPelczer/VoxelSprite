@@ -186,7 +186,8 @@ struct PixelCanvasView: View {
 
     /// Zeichnet ein halbtransparentes Overlay eines anderen Faces
     private func drawOverlay(context: GraphicsContext, canvas: PixelCanvas, gridSize: Int, cellSize: CGFloat, opacity: Double) {
-        context.opacity = opacity
+        var overlayContext = context
+        overlayContext.opacity = opacity
         for y in 0..<gridSize {
             for x in 0..<gridSize {
                 if let color = canvas.pixel(at: x, y: y) {
@@ -196,11 +197,10 @@ struct PixelCanvasView: View {
                         width: cellSize,
                         height: cellSize
                     )
-                    context.fill(Path(rect), with: .color(color))
+                    overlayContext.fill(Path(rect), with: .color(color))
                 }
             }
         }
-        context.opacity = 1
     }
 
     private func drawGridLines(context: GraphicsContext, gridSize: Int, cellSize: CGFloat, canvasSize: CGFloat) {
