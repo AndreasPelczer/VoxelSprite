@@ -1,8 +1,9 @@
 //
 //  PixelCanvasView.swift
-//  PlanktonSpriteApp
+//  VoxelSprite
 //
-//  Created by Andreas Pelczer on 27.02.26.
+//  Das Pixel-Raster zum Zeichnen.
+//  Adaptiert von PlanktonSprite mit Face Overlay statt Onion Skin.
 //
 
 import SwiftUI
@@ -11,30 +12,20 @@ import UniformTypeIdentifiers
 import AppKit
 #endif
 
-/// Das Pixel-Raster zum Zeichnen.
-/// Reagiert auf Mausklicks und Drag-Bewegungen.
-/// Unterstützt Zoom, Onion Skin und variable Grid-Größen.
 struct PixelCanvasView: View {
 
     @EnvironmentObject var canvasVM: CanvasViewModel
-    @EnvironmentObject var frameVM: FrameViewModel
+    @EnvironmentObject var blockVM: BlockViewModel
 
-    // MARK: - Lokaler State
-
-    /// Welcher Pixel wird gerade überfahren? Für Hover-Highlight.
     @State private var hoveredPixel: (x: Int, y: Int)?
-
-    /// Sind wir gerade am Zeichnen (Maustaste gedrückt)?
     @State private var isDrawing: Bool = false
 
     // MARK: - Dynamische Größen
 
-    /// Grid-Größe aus dem Projekt
     private var gridSize: Int {
-        frameVM.project.gridSize
+        blockVM.project.gridSize
     }
 
-    /// Basis-Pixel-Größe abhängig von Grid-Größe (kleineres Grid = größere Pixel)
     private var baseCellSize: CGFloat {
         switch gridSize {
         case 1...16: return 20
@@ -44,22 +35,19 @@ struct PixelCanvasView: View {
         }
     }
 
-    /// Effektive Pixel-Größe mit Zoom
     private var cellSize: CGFloat {
         baseCellSize * canvasVM.zoomScale
     }
 
-    /// Gesamtgröße des Canvas
     private var canvasSize: CGFloat {
         CGFloat(gridSize) * cellSize
     }
-    
+
     // MARK: - Body
-    
+
     var body: some View {
-        // Capture values outside Canvas to avoid EnvironmentObject wrapper issues
         let gridAccessor: (Int, Int) -> Color? = { x, y in
-            frameVM.activeCanvas.pixel(at: x, y: y)
+            blockVM.activeCanvas.pixel(at: x, y: y)
         }
         let showGrid = canvasVM.showGrid
         let hover = hoveredPixel
@@ -69,50 +57,34 @@ struct PixelCanvasView: View {
         let cs = cellSize
         let cvs = canvasSize
 
-        // Onion Skin: Pre-render als CGImage für Performance
-        let onionEnabled = canvasVM.onionSkinEnabled
-        let onionOpacity = canvasVM.onionSkinOpacity
-        let prevImage: CGImage? = onionEnabled && canvasVM.onionSkinPrevious
-            ? renderOnionSkinImage(frameVM.project.frame(at: frameVM.activeFrameIndex - 1)?.canvas, gridSize: gs)
-            : nil
-        let nextImage: CGImage? = onionEnabled && canvasVM.onionSkinNext
-            ? renderOnionSkinImage(frameVM.project.frame(at: frameVM.activeFrameIndex + 1)?.canvas, gridSize: gs)
-            : nil
+        // Face Overlay
+        let overlayCanvas = canvasVM.overlayCanvas
+        let overlayOpacity = canvasVM.faceOverlayOpacity
 
         Canvas { context, _ in
 
-            // 1. Schachbrett-Hintergrund (zeigt Transparenz)
+            // 1. Schachbrett-Hintergrund
             drawCheckerboard(context: context, gridSize: gs, cellSize: cs)
 
-            // 2. Onion Skin: vorheriges Frame (CGImage)
-            if let img = prevImage {
-                context.opacity = onionOpacity
-                context.draw(Image(decorative: img, scale: 1), in: CGRect(x: 0, y: 0, width: cvs, height: cvs))
-                context.opacity = 1
+            // 2. Face Overlay
+            if let overlay = overlayCanvas {
+                drawOverlay(context: context, canvas: overlay, gridSize: gs, cellSize: cs, opacity: overlayOpacity)
             }
 
-            // 3. Onion Skin: nächstes Frame (CGImage)
-            if let img = nextImage {
-                context.opacity = onionOpacity
-                context.draw(Image(decorative: img, scale: 1), in: CGRect(x: 0, y: 0, width: cvs, height: cvs))
-                context.opacity = 1
-            }
-
-            // 4. Pixel zeichnen
+            // 3. Pixel zeichnen
             drawPixels(context: context, gridSize: gs, cellSize: cs, accessor: gridAccessor)
 
-            // 5. Rasterlinien
+            // 4. Rasterlinien
             if showGrid {
                 drawGridLines(context: context, gridSize: gs, cellSize: cs, canvasSize: cvs)
             }
 
-            // 6. Hover-Highlight
+            // 5. Hover-Highlight
             if let hover = hover {
                 drawHoverIndicator(context: context, x: hover.x, y: hover.y, isPen: isPenTool, color: currentColor, cellSize: cs)
             }
         }
         .frame(width: canvasSize, height: canvasSize)
-        // Maus-Events: Klick, Drag, Hover
         .gesture(drawingGesture)
         #if os(macOS)
         .onHover { isHovering in
@@ -123,7 +95,7 @@ struct PixelCanvasView: View {
         .background(
             MouseTrackingView { location in
                 let (x, y) = pixelCoordinate(from: location)
-                if frameVM.activeCanvas.isValid(x: x, y: y) {
+                if blockVM.activeCanvas.isValid(x: x, y: y) {
                     hoveredPixel = (x, y)
                 }
             } onExit: {
@@ -132,7 +104,6 @@ struct PixelCanvasView: View {
         )
         #endif
         .border(Color.gray.opacity(0.3), width: 1)
-        // Cursor ändern je nach Werkzeug (nur auf macOS mit AppKit)
         #if canImport(AppKit)
         .onHover { inside in
             if inside {
@@ -143,17 +114,14 @@ struct PixelCanvasView: View {
         }
         #endif
     }
-    
+
     // MARK: - Zeichengesture
-    
-    /// Kombiniert Klick und Drag in eine Geste.
-    /// onChanged: Maustaste gedrückt oder Maus bewegt bei gedrückter Taste
-    /// onEnded: Maustaste losgelassen
+
     private var drawingGesture: some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
                 let (x, y) = pixelCoordinate(from: value.location)
-                guard frameVM.activeCanvas.isValid(x: x, y: y) else { return }
+                guard blockVM.activeCanvas.isValid(x: x, y: y) else { return }
 
                 if !isDrawing {
                     isDrawing = true
@@ -168,11 +136,9 @@ struct PixelCanvasView: View {
                 isDrawing = false
             }
     }
-    
+
     // MARK: - Koordinaten-Umrechnung
-    
-    /// Rechnet eine Mausposition in Pixel-Koordinaten um.
-    /// Gibt (x, y) im Bereich 0..<32 zurück.
+
     private func pixelCoordinate(from point: CGPoint) -> (Int, Int) {
         let x = Int(point.x / cellSize)
         let y = Int(point.y / cellSize)
@@ -181,10 +147,9 @@ struct PixelCanvasView: View {
             max(0, min(gridSize - 1, y))
         )
     }
-    
+
     // MARK: - Canvas-Zeichenfunktionen
 
-    /// Schachbrett – der klassische Transparenz-Indikator.
     private func drawCheckerboard(context: GraphicsContext, gridSize: Int, cellSize: CGFloat) {
         let lightColor = Color(red: 0.18, green: 0.18, blue: 0.22)
         let darkColor = Color(red: 0.15, green: 0.15, blue: 0.20)
@@ -203,7 +168,6 @@ struct PixelCanvasView: View {
         }
     }
 
-    /// Malt alle gesetzten Pixel auf das Canvas.
     private func drawPixels(context: GraphicsContext, gridSize: Int, cellSize: CGFloat, accessor: (Int, Int) -> Color?) {
         for y in 0..<gridSize {
             for x in 0..<gridSize {
@@ -220,33 +184,25 @@ struct PixelCanvasView: View {
         }
     }
 
-    /// Rendert ein PixelCanvas als CGImage für Onion Skin Overlay.
-    /// Wird einmal pro Frame-Wechsel berechnet statt bei jedem Canvas-Redraw.
-    private func renderOnionSkinImage(_ canvas: PixelCanvas?, gridSize: Int) -> CGImage? {
-        guard let canvas = canvas else { return nil }
-        guard let ctx = CGContext(
-            data: nil,
-            width: gridSize,
-            height: gridSize,
-            bitsPerComponent: 8,
-            bytesPerRow: gridSize * 4,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else { return nil }
-
+    /// Zeichnet ein halbtransparentes Overlay eines anderen Faces
+    private func drawOverlay(context: GraphicsContext, canvas: PixelCanvas, gridSize: Int, cellSize: CGFloat, opacity: Double) {
+        context.opacity = opacity
         for y in 0..<gridSize {
             for x in 0..<gridSize {
-                if let color = canvas.pixel(at: x, y: y),
-                   let c = color.cgColorComponents {
-                    ctx.setFillColor(red: c.r, green: c.g, blue: c.b, alpha: c.a)
-                    ctx.fill(CGRect(x: x, y: gridSize - 1 - y, width: 1, height: 1))
+                if let color = canvas.pixel(at: x, y: y) {
+                    let rect = CGRect(
+                        x: CGFloat(x) * cellSize,
+                        y: CGFloat(y) * cellSize,
+                        width: cellSize,
+                        height: cellSize
+                    )
+                    context.fill(Path(rect), with: .color(color))
                 }
             }
         }
-        return ctx.makeImage()
+        context.opacity = 1
     }
 
-    /// Zeichnet die Rasterlinien – dünn und dezent.
     private func drawGridLines(context: GraphicsContext, gridSize: Int, cellSize: CGFloat, canvasSize: CGFloat) {
         let lineColor = Color.white.opacity(0.08)
 
@@ -265,7 +221,6 @@ struct PixelCanvasView: View {
         }
     }
 
-    /// Zeigt an, über welchem Pixel die Maus schwebt.
     private func drawHoverIndicator(context: GraphicsContext, x: Int, y: Int, isPen: Bool, color: Color, cellSize: CGFloat) {
         let rect = CGRect(
             x: CGFloat(x) * cellSize,
@@ -317,7 +272,6 @@ private struct MouseTrackingView: NSViewRepresentable {
         var onExit: (() -> Void)?
         private var trackingArea: NSTrackingArea?
 
-        // Flip coordinate system to match SwiftUI (y=0 at top)
         override var isFlipped: Bool { true }
 
         override func updateTrackingAreas() {
@@ -348,4 +302,3 @@ private struct MouseTrackingView: NSViewRepresentable {
     }
 }
 #endif
-

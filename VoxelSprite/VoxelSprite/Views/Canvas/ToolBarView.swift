@@ -1,19 +1,20 @@
 //
 //  ToolBarView.swift
-//  PlanktonSpriteApp
+//  VoxelSprite
 //
-//  Created by Andreas Pelczer on 27.02.26.
+//  Die Werkzeugleiste über dem Canvas.
+//  Stift, Radierer, Füllen, Linie, Rechteck, Grid-Toggle, Undo/Redo.
 //
-
 
 import SwiftUI
 
-/// Die Werkzeugleiste über dem Canvas.
-/// Stift, Radierer, Füllen, Grid-Toggle, Undo/Redo, Leeren.
 struct ToolBarView: View {
-    
+
     @EnvironmentObject var canvasVM: CanvasViewModel
-    
+
+    /// Electric Teal Akzentfarbe
+    private let teal = Color(red: 0.0, green: 0.85, blue: 0.85)
+
     var body: some View {
         HStack(spacing: 6) {
 
@@ -65,7 +66,7 @@ struct ToolBarView: View {
 
             Text("\(Int(canvasVM.zoomScale * 100))%")
                 .font(.system(size: 9, weight: .bold, design: .monospaced))
-                .foregroundStyle(Color(red: 0.0, green: 0.85, blue: 0.85).opacity(0.8))
+                .foregroundStyle(teal.opacity(0.8))
                 .frame(width: 36)
 
             actionButton(icon: "plus.magnifyingglass", label: "Zoom +", enabled: canvasVM.zoomScale < canvasVM.maxZoom) {
@@ -74,15 +75,15 @@ struct ToolBarView: View {
 
             divider
 
-            // MARK: - Onion Skin Toggle
+            // MARK: - Face Overlay Toggle
 
-            Toggle(isOn: $canvasVM.onionSkinEnabled) {
+            Toggle(isOn: $canvasVM.faceOverlayEnabled) {
                 Image(systemName: "square.3.layers.3d")
                     .font(.system(size: 12, weight: .medium))
             }
             .toggleStyle(.button)
             .controlSize(.small)
-            .help("Onion Skin")
+            .help("Face Overlay")
 
             divider
 
@@ -90,7 +91,7 @@ struct ToolBarView: View {
 
             actionButton(
                 icon: "trash",
-                label: "Frame leeren",
+                label: "Face leeren",
                 enabled: true,
                 destructive: true
             ) {
@@ -102,13 +103,11 @@ struct ToolBarView: View {
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
-    
+
     // MARK: - Subviews
-    
-    /// Button für ein Werkzeug (Stift, Radierer, Füllen, Linie, Rechteck)
+
     private func toolButton(_ tool: CanvasViewModel.Tool) -> some View {
         let isActive = canvasVM.currentTool == tool
-        let teal = Color(red: 0.0, green: 0.85, blue: 0.85)
 
         return Button {
             withAnimation(.easeOut(duration: 0.12)) {
@@ -132,8 +131,7 @@ struct ToolBarView: View {
         .help(tool.rawValue)
         .keyboardShortcut(shortcutKey(for: tool), modifiers: [])
     }
-    
-    /// Button für eine Aktion (Undo, Redo, Leeren)
+
     private func actionButton(
         icon: String,
         label: String,
@@ -159,17 +157,13 @@ struct ToolBarView: View {
         .disabled(!enabled)
         .help(label)
     }
-    
-    /// Optischer Trenner zwischen Gruppen
+
     private var divider: some View {
         Rectangle()
             .fill(.quaternary)
             .frame(width: 1, height: 18)
     }
-    
-    /// Ordnet jedem Tool eine Taste zu.
-    /// KeyEquivalent akzeptiert nur Character –
-    /// deshalb der Umweg über die Zahl.
+
     private func shortcutKey(for tool: CanvasViewModel.Tool) -> KeyEquivalent {
         switch tool {
         case .pen:       return "1"

@@ -1,6 +1,6 @@
 //
 //  PaletteManager.swift
-//  PlanktonSpriteApp
+//  VoxelSprite
 //
 //  Verwaltet gespeicherte Farbpaletten.
 //  Paletten werden als JSON in UserDefaults persistiert.
@@ -24,7 +24,6 @@ struct SavedPalette: Codable, Identifiable {
         }
     }
 
-    /// Konvertiert die Hex-Strings zurück in SwiftUI Colors
     var swiftUIColors: [Color] {
         colors.map { Color(hex: $0) }
     }
@@ -35,26 +34,23 @@ class PaletteManager: ObservableObject {
 
     @Published var savedPalettes: [SavedPalette] = []
 
-    private let storageKey = "PlanktonSprite_SavedPalettes"
+    private let storageKey = "VoxelSprite_SavedPalettes"
 
     init() {
         loadPalettes()
     }
 
-    /// Speichert eine neue Palette
     func savePalette(name: String, colors: [Color]) {
         let palette = SavedPalette(name: name, colors: colors)
         savedPalettes.append(palette)
         persistPalettes()
     }
 
-    /// Löscht eine Palette
     func deletePalette(_ palette: SavedPalette) {
         savedPalettes.removeAll { $0.id == palette.id }
         persistPalettes()
     }
 
-    /// Lädt Paletten aus UserDefaults
     private func loadPalettes() {
         guard let data = UserDefaults.standard.data(forKey: storageKey),
               let palettes = try? JSONDecoder().decode([SavedPalette].self, from: data) else {
@@ -63,7 +59,6 @@ class PaletteManager: ObservableObject {
         savedPalettes = palettes
     }
 
-    /// Persistiert Paletten in UserDefaults
     private func persistPalettes() {
         guard let data = try? JSONEncoder().encode(savedPalettes) else { return }
         UserDefaults.standard.set(data, forKey: storageKey)
