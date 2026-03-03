@@ -1,71 +1,69 @@
 //
 //  ColorPaletteView.swift
-//  PlanktonSpriteApp
+//  VoxelSprite
 //
-//  Created by Andreas Pelczer on 27.02.26.
+//  Die Farbpalette mit Minecraft-spezifischen Farben.
+//  Vordefinierte Minecraft-Farbpalette + Custom Color Picker.
 //
-
 
 import SwiftUI
 
-/// Die Farbpalette unter dem Canvas.
-/// Vordefinierte Farben + Custom Color Picker.
 struct ColorPaletteView: View {
 
     @EnvironmentObject var canvasVM: CanvasViewModel
     @EnvironmentObject var paletteManager: PaletteManager
 
-    /// Name für neue Palette
     @State private var newPaletteName: String = ""
     @State private var showSavePalette: Bool = false
-    /// Aktuell geladene Saved Palette (nil = Standard)
     @State private var activeSavedPalette: SavedPalette?
-    
-    // MARK: - Farbpalette
-    
-    /// Vordefinierte Farben – Ozean- und Plankton-Töne,
-    /// plus Standardfarben die man immer braucht.
+
+    // MARK: - Minecraft Farbpalette
+
     private let palette: [Color] = [
-        // Reihe 1: Basics
+        // Reihe 1: Stein & Erze
+        Color(red: 0.50, green: 0.50, blue: 0.50),  // Stein
+        Color(red: 0.40, green: 0.40, blue: 0.40),  // Dunkelstein
+        Color(red: 0.69, green: 0.69, blue: 0.69),  // Hellstein
+        Color(red: 0.25, green: 0.25, blue: 0.25),  // Kohle
+
+        // Reihe 2: Holz
+        Color(red: 0.65, green: 0.45, blue: 0.20),  // Eiche
+        Color(red: 0.40, green: 0.25, blue: 0.13),  // Dunkeleiche
+        Color(red: 0.85, green: 0.70, blue: 0.45),  // Birke
+        Color(red: 0.55, green: 0.25, blue: 0.15),  // Akazie
+
+        // Reihe 3: Erde & Sand
+        Color(red: 0.55, green: 0.38, blue: 0.22),  // Erde
+        Color(red: 0.45, green: 0.32, blue: 0.18),  // Dunkle Erde
+        Color(red: 0.85, green: 0.80, blue: 0.55),  // Sand
+        Color(red: 0.75, green: 0.55, blue: 0.30),  // Rotsand
+
+        // Reihe 4: Gras & Pflanzen
+        Color(red: 0.30, green: 0.60, blue: 0.15),  // Gras
+        Color(red: 0.20, green: 0.45, blue: 0.10),  // Dunkelgras
+        Color(red: 0.45, green: 0.75, blue: 0.25),  // Hellgras
+        Color(red: 0.18, green: 0.35, blue: 0.08),  // Blätter
+
+        // Reihe 5: Erze & Metalle
+        Color(red: 0.90, green: 0.75, blue: 0.35),  // Gold
+        Color(red: 0.85, green: 0.85, blue: 0.85),  // Eisen
+        Color(red: 0.25, green: 0.70, blue: 0.80),  // Diamant
+        Color(red: 0.35, green: 0.90, blue: 0.35),  // Smaragd
+
+        // Reihe 6: Nether & End
+        Color(red: 0.55, green: 0.10, blue: 0.10),  // Netherrack
+        Color(red: 0.15, green: 0.08, blue: 0.20),  // Obsidian
+        Color(red: 0.85, green: 0.85, blue: 0.55),  // Endstein
+        Color(red: 0.40, green: 0.20, blue: 0.50),  // Purpur
+
+        // Reihe 7: Basics
         .black, .white,
-        Color(red: 0.4, green: 0.4, blue: 0.4),       // Grau
-        Color(red: 0.8, green: 0.8, blue: 0.8),       // Hellgrau
-        
-        // Reihe 2: Warme Töne
-        Color(red: 1.0, green: 0.0, blue: 0.0),       // Rot
-        Color(red: 1.0, green: 0.4, blue: 0.0),       // Orange
-        Color(red: 1.0, green: 0.8, blue: 0.0),       // Gelb
-        Color(red: 1.0, green: 1.0, blue: 0.4),       // Hellgelb
-        
-        // Reihe 3: Grüntöne (Algen, Plankton)
-        Color(red: 0.0, green: 0.6, blue: 0.0),       // Dunkelgrün
-        Color(red: 0.2, green: 0.8, blue: 0.2),       // Grün
-        Color(red: 0.4, green: 1.0, blue: 0.4),       // Hellgrün
-        Color(red: 0.6, green: 0.85, blue: 0.45),     // Limettengrün
-        
-        // Reihe 4: Blautöne (Ozean, Tiefsee)
-        Color(red: 0.0, green: 0.2, blue: 0.4),       // Tiefsee
-        Color(red: 0.0, green: 0.4, blue: 1.0),       // Blau
-        Color(red: 0.0, green: 0.7, blue: 0.85),      // Türkis
-        Color(red: 0.56, green: 0.88, blue: 0.94),    // Hellblau
-        
-        // Reihe 5: Violett / Biolumineszenz
-        Color(red: 0.6, green: 0.2, blue: 1.0),       // Violett
-        Color(red: 1.0, green: 0.4, blue: 0.8),       // Pink
-        Color(red: 0.33, green: 0.2, blue: 0.5),      // Dunkelviolett
-        Color(red: 0.8, green: 0.6, blue: 1.0),       // Lavendel
-        
-        // Reihe 6: Erd-/Sandtöne
-        Color(red: 0.6, green: 0.4, blue: 0.2),       // Braun
-        Color(red: 0.9, green: 0.75, blue: 0.5),      // Sand
-        Color(red: 0.4, green: 0.25, blue: 0.13),     // Dunkelbraun
-        Color(red: 1.0, green: 0.82, blue: 0.4),      // Gold
+        Color(red: 1.0, green: 0.0, blue: 0.0),     // Rot (Redstone)
+        Color(red: 0.0, green: 0.4, blue: 1.0),      // Blau (Lapislazuli)
     ]
-    
-    /// Anzahl Spalten im Grid
+
     private let columns = 4
-    
-    /// Die aktuell angezeigte Palette (Standard oder gespeichert)
+
     private var displayPalette: [Color] {
         if let saved = activeSavedPalette {
             return saved.swiftUIColors
@@ -113,19 +111,17 @@ struct ColorPaletteView: View {
             // MARK: - Saved Palettes
 
             HStack(spacing: 4) {
-                // Zurück zur Standardpalette
                 if activeSavedPalette != nil {
                     Button {
                         activeSavedPalette = nil
                     } label: {
-                        Text("Standard")
+                        Text("Minecraft")
                             .font(.system(size: 8, weight: .semibold))
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.mini)
                 }
 
-                // Gespeicherte Paletten laden
                 if !paletteManager.savedPalettes.isEmpty {
                     Menu {
                         ForEach(paletteManager.savedPalettes) { savedPalette in
@@ -142,7 +138,6 @@ struct ColorPaletteView: View {
 
                 Spacer()
 
-                // Aktuelle Palette speichern
                 Button {
                     showSavePalette.toggle()
                 } label: {
@@ -174,16 +169,14 @@ struct ColorPaletteView: View {
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
-    
+
     // MARK: - Subviews
-    
-    /// Einzelnes Farbfeld in der Palette
+
     private func colorSwatch(_ color: Color) -> some View {
         let isSelected = isSameColor(color, canvasVM.currentColor)
-        
+
         return Button {
             canvasVM.currentColor = color
-            // Wenn Radierer aktiv, automatisch zum Stift wechseln
             if canvasVM.currentTool == .eraser {
                 canvasVM.currentTool = .pen
             }
@@ -203,12 +196,9 @@ struct ColorPaletteView: View {
         }
         .buttonStyle(.plain)
     }
-    
+
     // MARK: - Hilfsfunktionen
-    
-    /// Vergleicht zwei SwiftUI Colors über ihre Komponenten.
-    /// Direkter == Vergleich funktioniert bei Color nicht zuverlässig,
-    /// weil Color eine View ist, kein Wert.
+
     private func isSameColor(_ a: Color, _ b: Color) -> Bool {
         guard let ac = a.cgColorComponents,
               let bc = b.cgColorComponents else { return false }
@@ -217,8 +207,7 @@ struct ColorPaletteView: View {
             && abs(ac.g - bc.g) < threshold
             && abs(ac.b - bc.b) < threshold
     }
-    
-    /// Erzeugt einen Hex-String aus einer SwiftUI Color.
+
     private func hexString(for color: Color) -> String {
         guard let c = color.cgColorComponents else { return "#000000" }
         let r = Int(c.r * 255)
