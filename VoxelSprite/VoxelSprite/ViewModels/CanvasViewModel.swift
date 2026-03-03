@@ -3,13 +3,29 @@
 //  VoxelSprite
 //
 //  Steuert alles rund ums Zeichnen auf dem Canvas.
-//  Adaptiert von PlanktonSprite: Onion Skin → Face Overlay.
+//  Unterstützt Block-Modus und Skin-Modus.
 //
 
 import SwiftUI
 import Combine
 
 class CanvasViewModel: ObservableObject {
+
+    // MARK: - Editor-Modus
+
+    enum EditorMode: String, CaseIterable, Identifiable {
+        case block = "Block"
+        case skin  = "Steve"
+
+        var id: String { rawValue }
+
+        var iconName: String {
+            switch self {
+            case .block: return "cube"
+            case .skin:  return "figure.stand"
+            }
+        }
+    }
 
     // MARK: - Werkzeuge
 
@@ -33,21 +49,17 @@ class CanvasViewModel: ObservableObject {
 
     // MARK: - Published State
 
+    @Published var editorMode: EditorMode = .block
     @Published var currentTool: Tool = .pen
     @Published var currentColor: Color = .cyan
     @Published var showGrid: Bool = true
     @Published private(set) var canUndo: Bool = false
     @Published private(set) var canRedo: Bool = false
 
-    // MARK: - Face Overlay (ersetzt Onion Skin)
+    // MARK: - Face Overlay (Block) / Layer Overlay (Skin)
 
-    /// Face Overlay: andere Faces halbtransparent einblenden
     @Published var faceOverlayEnabled: Bool = false
-
-    /// Welches Face als Overlay anzeigen (nil = automatisch das gegenüberliegende)
     @Published var overlayFaceType: FaceType?
-
-    /// Transparenz des Face Overlays
     @Published var faceOverlayOpacity: Double = 0.3
 
     // MARK: - Zoom
@@ -67,9 +79,10 @@ class CanvasViewModel: ObservableObject {
     private var redoStack: [PixelCanvas] = []
     var maxUndoSteps = 50
 
-    // MARK: - Referenz zum Projekt
+    // MARK: - Referenzen
 
     private weak var blockViewModel: BlockViewModel?
+    private weak var skinViewModel: SkinViewModel?
 
     // MARK: - Init
 
@@ -79,17 +92,52 @@ class CanvasViewModel: ObservableObject {
         self.blockViewModel = blockViewModel
     }
 
-    // MARK: - Aktuelles Canvas
+    func connect(to skinViewModel: SkinViewModel) {
+        self.skinViewModel = skinViewModel
+    }
+
+    // MARK: - Aktuelles Canvas (modus-abhängig)
 
     var currentCanvas: PixelCanvas {
-        blockViewModel?.activeCanvas ?? PixelCanvas(gridSize: 16)
+        switch editorMode {
+        case .block:
+            return blockViewModel?.activeCanvas ?? PixelCanvas(gridSize: 16)
+        case .skin:
+            return skinViewModel?.activeCanvas ?? PixelCanvas(width: 8, height: 8)
+        }
+    }
+
+    /// Canvas-Breite
+    var canvasWidth: Int { currentCanvas.width }
+
+    /// Canvas-Höhe
+    var canvasHeight: Int { currentCanvas.height }
+
+    private func updateCurrentCanvas(_ canvas: PixelCanvas) {
+        switch editorMode {
+        case .block:
+            blockViewModel?.updateActiveCanvas(canvas)
+        case .skin:
+            skinViewModel?.updateActiveCanvas(canvas)
+        }
+    }
+
+    private func applyCurrentTemplate() {
+        switch editorMode {
+        case .block:
+            blockViewModel?.applyTemplate()
+            blockViewModel?.scheduleStrokeAutosave()
+        case .skin:
+            skinViewModel?.applyTemplate()
+            skinViewModel?.scheduleStrokeAutosave()
+        }
     }
 
     // MARK: - Face Overlay Helpers
 
-    /// Das gegenüberliegende Face für automatisches Overlay
+    /// Das gegenüberliegende Face für automatisches Overlay (nur Block-Modus)
     var oppositeFaceType: FaceType? {
-        guard let blockVM = blockViewModel else { return nil }
+        guard editorMode == .block, let blockVM = blockViewModel else { return nil }
         switch blockVM.activeFaceType {
         case .top:    return .bottom
         case .bottom: return .top
@@ -100,11 +148,18 @@ class CanvasViewModel: ObservableObject {
         }
     }
 
-    /// Canvas des Overlay-Faces
+    /// Canvas des Overlay-Faces (Block) oder des anderen Layers (Skin)
     var overlayCanvas: PixelCanvas? {
-        guard faceOverlayEnabled, let blockVM = blockViewModel else { return nil }
-        let faceType = overlayFaceType ?? oppositeFaceType ?? .north
-        return blockVM.project.canvas(for: faceType)
+        guard faceOverlayEnabled else { return nil }
+
+        switch editorMode {
+        case .block:
+            guard let blockVM = blockViewModel else { return nil }
+            let faceType = overlayFaceType ?? oppositeFaceType ?? .north
+            return blockVM.project.canvas(for: faceType)
+        case .skin:
+            return skinViewModel?.overlayCanvas()
+        }
     }
 
     // MARK: - Zeichenoperationen
@@ -115,7 +170,7 @@ class CanvasViewModel: ObservableObject {
         switch currentTool {
         case .line, .rectangle:
             shapeStartPoint = (x, y)
-            preShapeCanvas = blockViewModel?.activeCanvas
+            preShapeCanvas = currentCanvas
         default:
             applyTool(at: x, y: y)
         }
@@ -126,11 +181,11 @@ class CanvasViewModel: ObservableObject {
         case .line:
             guard let start = shapeStartPoint, var canvas = preShapeCanvas else { return }
             drawLine(canvas: &canvas, x0: start.x, y0: start.y, x1: x, y1: y, color: currentColor)
-            blockViewModel?.updateActiveCanvas(canvas)
+            updateCurrentCanvas(canvas)
         case .rectangle:
             guard let start = shapeStartPoint, var canvas = preShapeCanvas else { return }
             drawRectangle(canvas: &canvas, x0: start.x, y0: start.y, x1: x, y1: y, color: currentColor)
-            blockViewModel?.updateActiveCanvas(canvas)
+            updateCurrentCanvas(canvas)
         default:
             applyTool(at: x, y: y)
         }
@@ -141,24 +196,22 @@ class CanvasViewModel: ObservableObject {
         case .line:
             guard let start = shapeStartPoint, var canvas = preShapeCanvas else { return }
             drawLine(canvas: &canvas, x0: start.x, y0: start.y, x1: x, y1: y, color: currentColor)
-            blockViewModel?.updateActiveCanvas(canvas)
+            updateCurrentCanvas(canvas)
         case .rectangle:
             guard let start = shapeStartPoint, var canvas = preShapeCanvas else { return }
             drawRectangle(canvas: &canvas, x0: start.x, y0: start.y, x1: x, y1: y, color: currentColor)
-            blockViewModel?.updateActiveCanvas(canvas)
+            updateCurrentCanvas(canvas)
         default:
             break
         }
         shapeStartPoint = nil
         preShapeCanvas = nil
 
-        // Template anwenden nach dem Zeichnen
-        blockViewModel?.applyTemplate()
-        blockViewModel?.scheduleStrokeAutosave()
+        applyCurrentTemplate()
     }
 
     private func applyTool(at x: Int, y: Int) {
-        guard var canvas = blockViewModel?.activeCanvas else { return }
+        var canvas = currentCanvas
 
         switch currentTool {
         case .pen:
@@ -171,7 +224,7 @@ class CanvasViewModel: ObservableObject {
             break
         }
 
-        blockViewModel?.updateActiveCanvas(canvas)
+        updateCurrentCanvas(canvas)
     }
 
     // MARK: - Flood Fill
@@ -268,14 +321,14 @@ class CanvasViewModel: ObservableObject {
     func undo() {
         guard let previous = undoStack.popLast() else { return }
         redoStack.append(currentCanvas)
-        blockViewModel?.updateActiveCanvas(previous)
+        updateCurrentCanvas(previous)
         updateUndoRedoState()
     }
 
     func redo() {
         guard let next = redoStack.popLast() else { return }
         undoStack.append(currentCanvas)
-        blockViewModel?.updateActiveCanvas(next)
+        updateCurrentCanvas(next)
         updateUndoRedoState()
     }
 
@@ -296,7 +349,6 @@ class CanvasViewModel: ObservableObject {
         saveUndoState()
         var canvas = currentCanvas
         canvas.clear()
-        blockViewModel?.updateActiveCanvas(canvas)
-        blockViewModel?.autosave()
+        updateCurrentCanvas(canvas)
     }
 }

@@ -34,9 +34,7 @@ struct FaceSelectorView: View {
             // MARK: - Kreuzform-Layout (aufgeklappter Würfel)
             crossLayout
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .background(.background.opacity(0.5))
+        .padding(.vertical, 4)
     }
 
     // MARK: - Kreuzform: Aufgeklappter Würfel
@@ -71,7 +69,7 @@ struct FaceSelectorView: View {
         }
     }
 
-    private var faceSize: CGFloat { 60 }
+    private var faceSize: CGFloat { 48 }
 
     // MARK: - Einzelnes Face-Thumbnail
 

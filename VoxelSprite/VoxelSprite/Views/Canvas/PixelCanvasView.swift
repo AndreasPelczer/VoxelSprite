@@ -3,7 +3,8 @@
 //  VoxelSprite
 //
 //  Das Pixel-Raster zum Zeichnen.
-//  Adaptiert von PlanktonSprite mit Face Overlay statt Onion Skin.
+//  Unterstützt quadratische und rechteckige Canvases (für Steve-Faces).
+//  Bezieht Canvas-Daten über CanvasViewModel (modus-unabhängig).
 //
 
 import SwiftUI
@@ -15,23 +16,28 @@ import AppKit
 struct PixelCanvasView: View {
 
     @EnvironmentObject var canvasVM: CanvasViewModel
-    @EnvironmentObject var blockVM: BlockViewModel
 
     @State private var hoveredPixel: (x: Int, y: Int)?
     @State private var isDrawing: Bool = false
 
     // MARK: - Dynamische Größen
 
-    private var gridSize: Int {
-        blockVM.project.gridSize
+    private var canvasWidth: Int {
+        canvasVM.canvasWidth
+    }
+
+    private var canvasHeight: Int {
+        canvasVM.canvasHeight
     }
 
     private var baseCellSize: CGFloat {
-        switch gridSize {
-        case 1...16: return 20
+        let maxDim = max(canvasWidth, canvasHeight)
+        switch maxDim {
+        case 1...8:   return 32
+        case 9...16:  return 20
         case 17...32: return 14
         case 33...64: return 7
-        default: return max(4, 448.0 / CGFloat(gridSize))
+        default:      return max(4, 448.0 / CGFloat(maxDim))
         }
     }
 
@@ -39,23 +45,28 @@ struct PixelCanvasView: View {
         baseCellSize * canvasVM.zoomScale
     }
 
-    private var canvasSize: CGFloat {
-        CGFloat(gridSize) * cellSize
+    private var totalWidth: CGFloat {
+        CGFloat(canvasWidth) * cellSize
+    }
+
+    private var totalHeight: CGFloat {
+        CGFloat(canvasHeight) * cellSize
     }
 
     // MARK: - Body
 
     var body: some View {
+        let canvas = canvasVM.currentCanvas
         let gridAccessor: (Int, Int) -> Color? = { x, y in
-            blockVM.activeCanvas.pixel(at: x, y: y)
+            canvas.pixel(at: x, y: y)
         }
         let showGrid = canvasVM.showGrid
         let hover = hoveredPixel
         let isPenTool = canvasVM.currentTool == .pen || canvasVM.currentTool == .line || canvasVM.currentTool == .rectangle
         let currentColor = canvasVM.currentColor
-        let gs = gridSize
+        let cw = canvasWidth
+        let ch = canvasHeight
         let cs = cellSize
-        let cvs = canvasSize
 
         // Face Overlay
         let overlayCanvas = canvasVM.overlayCanvas
@@ -64,19 +75,19 @@ struct PixelCanvasView: View {
         Canvas { context, _ in
 
             // 1. Schachbrett-Hintergrund
-            drawCheckerboard(context: context, gridSize: gs, cellSize: cs)
+            drawCheckerboard(context: context, width: cw, height: ch, cellSize: cs)
 
-            // 2. Face Overlay
+            // 2. Face / Layer Overlay
             if let overlay = overlayCanvas {
-                drawOverlay(context: context, canvas: overlay, gridSize: gs, cellSize: cs, opacity: overlayOpacity)
+                drawOverlay(context: context, canvas: overlay, width: cw, height: ch, cellSize: cs, opacity: overlayOpacity)
             }
 
             // 3. Pixel zeichnen
-            drawPixels(context: context, gridSize: gs, cellSize: cs, accessor: gridAccessor)
+            drawPixels(context: context, width: cw, height: ch, cellSize: cs, accessor: gridAccessor)
 
             // 4. Rasterlinien
             if showGrid {
-                drawGridLines(context: context, gridSize: gs, cellSize: cs, canvasSize: cvs)
+                drawGridLines(context: context, width: cw, height: ch, cellSize: cs)
             }
 
             // 5. Hover-Highlight
@@ -84,7 +95,7 @@ struct PixelCanvasView: View {
                 drawHoverIndicator(context: context, x: hover.x, y: hover.y, isPen: isPenTool, color: currentColor, cellSize: cs)
             }
         }
-        .frame(width: canvasSize, height: canvasSize)
+        .frame(width: totalWidth, height: totalHeight)
         .gesture(drawingGesture)
         #if os(macOS)
         .onHover { isHovering in
@@ -95,7 +106,7 @@ struct PixelCanvasView: View {
         .background(
             MouseTrackingView { location in
                 let (x, y) = pixelCoordinate(from: location)
-                if blockVM.activeCanvas.isValid(x: x, y: y) {
+                if canvasVM.currentCanvas.isValid(x: x, y: y) {
                     hoveredPixel = (x, y)
                 }
             } onExit: {
@@ -121,7 +132,7 @@ struct PixelCanvasView: View {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
                 let (x, y) = pixelCoordinate(from: value.location)
-                guard blockVM.activeCanvas.isValid(x: x, y: y) else { return }
+                guard canvasVM.currentCanvas.isValid(x: x, y: y) else { return }
 
                 if !isDrawing {
                     isDrawing = true
@@ -143,19 +154,19 @@ struct PixelCanvasView: View {
         let x = Int(point.x / cellSize)
         let y = Int(point.y / cellSize)
         return (
-            max(0, min(gridSize - 1, x)),
-            max(0, min(gridSize - 1, y))
+            max(0, min(canvasWidth - 1, x)),
+            max(0, min(canvasHeight - 1, y))
         )
     }
 
     // MARK: - Canvas-Zeichenfunktionen
 
-    private func drawCheckerboard(context: GraphicsContext, gridSize: Int, cellSize: CGFloat) {
+    private func drawCheckerboard(context: GraphicsContext, width: Int, height: Int, cellSize: CGFloat) {
         let lightColor = Color(red: 0.18, green: 0.18, blue: 0.22)
         let darkColor = Color(red: 0.15, green: 0.15, blue: 0.20)
 
-        for y in 0..<gridSize {
-            for x in 0..<gridSize {
+        for y in 0..<height {
+            for x in 0..<width {
                 let color = (x + y) % 2 == 0 ? lightColor : darkColor
                 let rect = CGRect(
                     x: CGFloat(x) * cellSize,
@@ -168,9 +179,9 @@ struct PixelCanvasView: View {
         }
     }
 
-    private func drawPixels(context: GraphicsContext, gridSize: Int, cellSize: CGFloat, accessor: (Int, Int) -> Color?) {
-        for y in 0..<gridSize {
-            for x in 0..<gridSize {
+    private func drawPixels(context: GraphicsContext, width: Int, height: Int, cellSize: CGFloat, accessor: (Int, Int) -> Color?) {
+        for y in 0..<height {
+            for x in 0..<width {
                 if let color = accessor(x, y) {
                     let rect = CGRect(
                         x: CGFloat(x) * cellSize,
@@ -184,12 +195,14 @@ struct PixelCanvasView: View {
         }
     }
 
-    /// Zeichnet ein halbtransparentes Overlay eines anderen Faces
-    private func drawOverlay(context: GraphicsContext, canvas: PixelCanvas, gridSize: Int, cellSize: CGFloat, opacity: Double) {
+    /// Zeichnet ein halbtransparentes Overlay eines anderen Faces / Layers
+    private func drawOverlay(context: GraphicsContext, canvas: PixelCanvas, width: Int, height: Int, cellSize: CGFloat, opacity: Double) {
         var overlayContext = context
         overlayContext.opacity = opacity
-        for y in 0..<gridSize {
-            for x in 0..<gridSize {
+        let drawW = min(width, canvas.width)
+        let drawH = min(height, canvas.height)
+        for y in 0..<drawH {
+            for x in 0..<drawW {
                 if let color = canvas.pixel(at: x, y: y) {
                     let rect = CGRect(
                         x: CGFloat(x) * cellSize,
@@ -203,20 +216,24 @@ struct PixelCanvasView: View {
         }
     }
 
-    private func drawGridLines(context: GraphicsContext, gridSize: Int, cellSize: CGFloat, canvasSize: CGFloat) {
+    private func drawGridLines(context: GraphicsContext, width: Int, height: Int, cellSize: CGFloat) {
         let lineColor = Color.white.opacity(0.08)
 
-        for i in 0...gridSize {
+        for i in 0...width {
             let pos = CGFloat(i) * cellSize
 
             var vPath = Path()
             vPath.move(to: CGPoint(x: pos, y: 0))
-            vPath.addLine(to: CGPoint(x: pos, y: canvasSize))
+            vPath.addLine(to: CGPoint(x: pos, y: CGFloat(height) * cellSize))
             context.stroke(vPath, with: .color(lineColor), lineWidth: 0.5)
+        }
+
+        for i in 0...height {
+            let pos = CGFloat(i) * cellSize
 
             var hPath = Path()
             hPath.move(to: CGPoint(x: 0, y: pos))
-            hPath.addLine(to: CGPoint(x: canvasSize, y: pos))
+            hPath.addLine(to: CGPoint(x: CGFloat(width) * cellSize, y: pos))
             context.stroke(hPath, with: .color(lineColor), lineWidth: 0.5)
         }
     }
