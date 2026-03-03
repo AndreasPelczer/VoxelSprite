@@ -30,11 +30,12 @@ struct ContentView: View {
     @State private var showOpenDialog = false
     @State private var documentToSave: VoxelDocument?
     @State private var showTilePreview = false
+    @State private var show3DGrid = true
 
     var body: some View {
         mainContent
         #if os(macOS)
-        .frame(minWidth: 850, minHeight: 620)
+        .frame(minWidth: 900, minHeight: 640)
         #endif
         .background(Color(red: 0.1, green: 0.1, blue: 0.14))
         .preferredColorScheme(.dark)
@@ -143,7 +144,7 @@ struct ContentView: View {
 
             // MARK: - Rechte Seite: Vollhöhe-Sidebar
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 10) {
+                VStack(spacing: 12) {
 
                     // MARK: - Modus-Umschaltung
                     modeSwitcher
@@ -171,9 +172,9 @@ struct ContentView: View {
                         skinExportCard
                     }
                 }
-                .padding(12)
+                .padding(16)
             }
-            .frame(width: 280)
+            .frame(width: 320)
             .background(.background.opacity(0.5))
         }
     }
@@ -181,35 +182,33 @@ struct ContentView: View {
     // MARK: - Modus-Umschaltung
 
     private var modeSwitcher: some View {
-        VStack(spacing: 6) {
-            HStack(spacing: 4) {
-                ForEach(CanvasViewModel.EditorMode.allCases) { mode in
-                    Button {
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            canvasVM.editorMode = mode
-                            canvasVM.resetUndoHistory()
-                        }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: mode.iconName)
-                                .font(.system(size: 11, weight: .medium))
-                            Text(mode.rawValue)
-                                .font(.system(size: 11, weight: .bold))
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(canvasVM.editorMode == mode ? accentTeal.opacity(0.2) : Color.clear)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(canvasVM.editorMode == mode ? accentTeal.opacity(0.5) : .white.opacity(0.1), lineWidth: 1)
-                        )
-                        .foregroundStyle(canvasVM.editorMode == mode ? accentTeal : .secondary)
+        HStack(spacing: 6) {
+            ForEach(CanvasViewModel.EditorMode.allCases) { mode in
+                Button {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        canvasVM.editorMode = mode
+                        canvasVM.resetUndoHistory()
                     }
-                    .buttonStyle(.plain)
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: mode.iconName)
+                            .font(.system(size: 13, weight: .semibold))
+                        Text(mode.rawValue)
+                            .font(.system(size: 13, weight: .bold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(canvasVM.editorMode == mode ? accentTeal.opacity(0.2) : Color.clear)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(canvasVM.editorMode == mode ? accentTeal.opacity(0.6) : .white.opacity(0.08), lineWidth: canvasVM.editorMode == mode ? 1.5 : 1)
+                    )
+                    .foregroundStyle(canvasVM.editorMode == mode ? accentTeal : .secondary)
                 }
+                .buttonStyle(.plain)
             }
         }
     }
@@ -229,25 +228,25 @@ struct ContentView: View {
         // Block-Name
         HStack {
             Text("Name:")
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(size: 11, weight: .medium))
             TextField("block_name", text: $blockVM.project.name)
                 .textFieldStyle(.roundedBorder)
-                .font(.system(size: 10, design: .monospaced))
-                .controlSize(.mini)
+                .font(.system(size: 11, design: .monospaced))
+                .controlSize(.small)
         }
 
         // Canvas-Größe
-        HStack(spacing: 4) {
+        HStack(spacing: 6) {
             ForEach(PixelCanvas.PresetSize.allCases) { preset in
                 Button {
                     blockVM.newProject(gridSize: preset.rawValue)
                     canvasVM.resetUndoHistory()
                 } label: {
                     Text(preset.label)
-                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 }
                 .buttonStyle(.bordered)
-                .controlSize(.mini)
+                .controlSize(.small)
                 .tint(blockVM.project.gridSize == preset.rawValue ? accentTeal : nil)
             }
         }
@@ -258,16 +257,16 @@ struct ContentView: View {
                 Button {
                     blockVM.project.template = template
                 } label: {
-                    VStack(spacing: 2) {
+                    VStack(spacing: 3) {
                         Image(systemName: template.iconName)
-                            .font(.system(size: 10))
+                            .font(.system(size: 12))
                         Text(template.rawValue)
-                            .font(.system(size: 7, weight: .medium))
+                            .font(.system(size: 8, weight: .medium))
                     }
                     .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
-                .controlSize(.mini)
+                .controlSize(.small)
                 .tint(blockVM.project.template == template ? accentTeal : nil)
             }
         }
@@ -275,16 +274,27 @@ struct ContentView: View {
         Divider()
 
         // 3D Vorschau (SceneKit)
-        sectionHeader("3D VORSCHAU")
-        SceneKitPreviewView()
+        HStack {
+            sectionHeader("3D VORSCHAU")
+            Spacer()
+            Toggle(isOn: $show3DGrid) {
+                Image(systemName: "grid")
+                    .font(.system(size: 10, weight: .medium))
+            }
+            .toggleStyle(.button)
+            .controlSize(.mini)
+            .help("Pixel-Grid auf 3D-Modell")
+        }
+
+        SceneKitPreviewView(showGrid: show3DGrid)
 
         Divider()
 
         // Tile-Vorschau
         Toggle("Tile-Vorschau (3×3)", isOn: $showTilePreview)
-            .font(.system(size: 10, weight: .medium))
+            .font(.system(size: 11, weight: .medium))
             .toggleStyle(.switch)
-            .controlSize(.mini)
+            .controlSize(.small)
 
         if showTilePreview {
             TilePreviewView(faceType: blockVM.activeFaceType)
@@ -301,8 +311,19 @@ struct ContentView: View {
         Divider()
 
         // 3D Vorschau
-        sectionHeader("3D VORSCHAU")
-        StevePreviewView()
+        HStack {
+            sectionHeader("3D VORSCHAU")
+            Spacer()
+            Toggle(isOn: $show3DGrid) {
+                Image(systemName: "grid")
+                    .font(.system(size: 10, weight: .medium))
+            }
+            .toggleStyle(.button)
+            .controlSize(.mini)
+            .help("Pixel-Grid auf 3D-Modell")
+        }
+
+        StevePreviewView(showGrid: show3DGrid)
     }
 
     // MARK: - Overlay Section (Block + Skin)
@@ -313,9 +334,9 @@ struct ContentView: View {
 
         Toggle(canvasVM.editorMode == .block ? "Face Overlay" : "Layer Overlay",
                isOn: $canvasVM.faceOverlayEnabled)
-            .font(.system(size: 10, weight: .medium))
+            .font(.system(size: 11, weight: .medium))
             .toggleStyle(.switch)
-            .controlSize(.mini)
+            .controlSize(.small)
 
         if canvasVM.faceOverlayEnabled {
             if canvasVM.editorMode == .block {
@@ -365,18 +386,18 @@ struct ContentView: View {
             // Namespace
             HStack {
                 Text("Namespace:")
-                    .font(.system(size: 9, weight: .medium))
+                    .font(.system(size: 10, weight: .medium))
                 TextField("minecraft", text: $blockVM.project.namespace)
                     .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 9, design: .monospaced))
-                    .controlSize(.mini)
+                    .font(.system(size: 10, design: .monospaced))
+                    .controlSize(.small)
             }
 
             // Transparenter Hintergrund
             Toggle("Transparenter Hintergrund", isOn: $exportVM.transparentBackground)
-                .font(.system(size: 10))
+                .font(.system(size: 11))
                 .toggleStyle(.switch)
-                .controlSize(.mini)
+                .controlSize(.small)
 
             // Export-Fortschritt
             if exportVM.isExporting {
@@ -434,12 +455,14 @@ struct ContentView: View {
         VStack(spacing: 10) {
             sectionHeader("EXPORT")
 
-            Text("Skin-Name")
-                .font(.system(size: 9, weight: .medium))
-            TextField("steve", text: $skinVM.project.name)
-                .textFieldStyle(.roundedBorder)
-                .font(.system(size: 10, design: .monospaced))
-                .controlSize(.mini)
+            HStack {
+                Text("Skin-Name:")
+                    .font(.system(size: 11, weight: .medium))
+                TextField("steve", text: $skinVM.project.name)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 11, design: .monospaced))
+                    .controlSize(.small)
+            }
 
             Button {
                 exportSkinPNG()
@@ -491,8 +514,9 @@ struct ContentView: View {
     private func sectionHeader(_ title: String) -> some View {
         HStack {
             Text(title)
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .font(.system(size: 12, weight: .heavy, design: .monospaced))
                 .foregroundStyle(.secondary)
+                .tracking(1)
             Spacer()
         }
     }
