@@ -5,6 +5,7 @@
 //  Echter 3D-Würfel mit SceneKit.
 //  Zeigt alle 6 Face-Texturen auf einem drehbaren Würfel.
 //  Pixel-Art bleibt scharf durch Nearest-Neighbor-Filtering.
+//  Optional: Pixel-Grid-Overlay auf dem Modell.
 //
 
 import SwiftUI
@@ -16,11 +17,13 @@ struct SceneKitPreviewView: View {
 
     @EnvironmentObject var blockVM: BlockViewModel
 
-    private let previewSize: CGFloat = 200
+    /// Grid auf dem 3D-Modell anzeigen
+    var showGrid: Bool = false
 
     var body: some View {
-        BlockCubeSceneView(project: blockVM.project)
-            .frame(width: previewSize, height: previewSize)
+        BlockCubeSceneView(project: blockVM.project, showGrid: showGrid)
+            .frame(maxWidth: .infinity)
+            .aspectRatio(1, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
@@ -35,6 +38,7 @@ struct SceneKitPreviewView: View {
 
 struct BlockCubeSceneView: NSViewRepresentable {
     let project: BlockProject
+    var showGrid: Bool = false
 
     func makeNSView(context: Context) -> SCNView {
         let scnView = SCNView()
@@ -48,12 +52,12 @@ struct BlockCubeSceneView: NSViewRepresentable {
     func updateNSView(_ scnView: SCNView, context: Context) {
         guard let cubeNode = scnView.scene?.rootNode.childNode(withName: "cube", recursively: true),
               let box = cubeNode.geometry as? SCNBox else { return }
-        box.materials = Self.createMaterials(project: project)
+        box.materials = Self.createMaterials(project: project, showGrid: showGrid)
     }
 
     static func createScene() -> SCNScene {
         let scene = SCNScene()
-        scene.background.contents = platformColor(r: 0.05, g: 0.05, b: 0.08)
+        scene.background.contents = NSColor(red: 0.05, green: 0.05, blue: 0.08, alpha: 1)
 
         // Cube
         let box = SCNBox(width: 1, height: 1, length: 1, chamferRadius: 0)
@@ -75,7 +79,7 @@ struct BlockCubeSceneView: NSViewRepresentable {
         ambientNode.light = SCNLight()
         ambientNode.light?.type = .ambient
         ambientNode.light?.intensity = 400
-        ambientNode.light?.color = platformColor(r: 1, g: 1, b: 1)
+        ambientNode.light?.color = NSColor(red: 1, green: 1, blue: 1, alpha: 1)
         scene.rootNode.addChildNode(ambientNode)
 
         // Directional Light
@@ -83,7 +87,7 @@ struct BlockCubeSceneView: NSViewRepresentable {
         directionalNode.light = SCNLight()
         directionalNode.light?.type = .directional
         directionalNode.light?.intensity = 600
-        directionalNode.light?.color = platformColor(r: 1, g: 1, b: 1)
+        directionalNode.light?.color = NSColor(red: 1, green: 1, blue: 1, alpha: 1)
         directionalNode.position = SCNVector3(2, 4, 2)
         directionalNode.look(at: SCNVector3(0, 0, 0))
         scene.rootNode.addChildNode(directionalNode)
@@ -93,12 +97,12 @@ struct BlockCubeSceneView: NSViewRepresentable {
 
     /// Erzeugt 6 Materials für die Würfelflächen.
     /// SCNBox Reihenfolge: +X(East), -X(West), +Y(Top), -Y(Bottom), +Z(North), -Z(South)
-    static func createMaterials(project: BlockProject) -> [SCNMaterial] {
+    static func createMaterials(project: BlockProject, showGrid: Bool) -> [SCNMaterial] {
         let faceOrder: [FaceType] = [.east, .west, .top, .bottom, .north, .south]
         return faceOrder.map { faceType in
             let material = SCNMaterial()
             let canvas = project.canvas(for: faceType)
-            if let image = canvas.toCGImage() {
+            if let image = canvas.toCGImage(showGrid: showGrid) {
                 material.diffuse.contents = image
                 material.diffuse.magnificationFilter = .nearest
                 material.diffuse.minificationFilter = .nearest
@@ -110,16 +114,13 @@ struct BlockCubeSceneView: NSViewRepresentable {
             return material
         }
     }
-
-    private static func platformColor(r: CGFloat, g: CGFloat, b: CGFloat) -> Any {
-        return NSColor(red: r, green: g, blue: b, alpha: 1)
-    }
 }
 
 #elseif os(iOS)
 
 struct BlockCubeSceneView: UIViewRepresentable {
     let project: BlockProject
+    var showGrid: Bool = false
 
     func makeUIView(context: Context) -> SCNView {
         let scnView = SCNView()
@@ -133,7 +134,7 @@ struct BlockCubeSceneView: UIViewRepresentable {
     func updateUIView(_ scnView: SCNView, context: Context) {
         guard let cubeNode = scnView.scene?.rootNode.childNode(withName: "cube", recursively: true),
               let box = cubeNode.geometry as? SCNBox else { return }
-        box.materials = Self.createMaterials(project: project)
+        box.materials = Self.createMaterials(project: project, showGrid: showGrid)
     }
 
     static func createScene() -> SCNScene {
@@ -170,12 +171,12 @@ struct BlockCubeSceneView: UIViewRepresentable {
         return scene
     }
 
-    static func createMaterials(project: BlockProject) -> [SCNMaterial] {
+    static func createMaterials(project: BlockProject, showGrid: Bool) -> [SCNMaterial] {
         let faceOrder: [FaceType] = [.east, .west, .top, .bottom, .north, .south]
         return faceOrder.map { faceType in
             let material = SCNMaterial()
             let canvas = project.canvas(for: faceType)
-            if let image = canvas.toCGImage() {
+            if let image = canvas.toCGImage(showGrid: showGrid) {
                 material.diffuse.contents = image
                 material.diffuse.magnificationFilter = .nearest
                 material.diffuse.minificationFilter = .nearest

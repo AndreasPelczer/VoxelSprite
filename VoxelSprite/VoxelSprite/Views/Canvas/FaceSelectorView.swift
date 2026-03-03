@@ -21,13 +21,14 @@ struct FaceSelectorView: View {
         VStack(spacing: 8) {
             HStack {
                 Text("FACES")
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .font(.system(size: 12, weight: .heavy, design: .monospaced))
                     .foregroundStyle(.secondary)
+                    .tracking(1)
 
                 Spacer()
 
                 Text(blockVM.activeFaceType.rawValue)
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
                     .foregroundStyle(teal)
             }
 

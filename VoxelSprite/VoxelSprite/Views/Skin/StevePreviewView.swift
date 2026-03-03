@@ -14,11 +14,13 @@ struct StevePreviewView: View {
 
     @EnvironmentObject var skinVM: SkinViewModel
 
-    private let previewSize: CGFloat = 200
+    /// Grid auf dem 3D-Modell anzeigen
+    var showGrid: Bool = false
 
     var body: some View {
-        SteveSceneView(project: skinVM.project)
-            .frame(width: previewSize, height: previewSize)
+        SteveSceneView(project: skinVM.project, showGrid: showGrid)
+            .frame(maxWidth: .infinity)
+            .aspectRatio(0.7, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
@@ -58,21 +60,22 @@ private let steveParts: [StevePartDef] = [
 
 struct SteveSceneView: NSViewRepresentable {
     let project: SkinProject
+    var showGrid: Bool = false
 
     func makeNSView(context: Context) -> SCNView {
         let scnView = SCNView()
         scnView.allowsCameraControl = true
         scnView.backgroundColor = NSColor(red: 0.05, green: 0.05, blue: 0.08, alpha: 1)
         scnView.antialiasingMode = .none
-        scnView.scene = Self.createScene(project: project)
+        scnView.scene = Self.createScene(project: project, showGrid: showGrid)
         return scnView
     }
 
     func updateNSView(_ scnView: SCNView, context: Context) {
-        Self.updateMaterials(scene: scnView.scene, project: project)
+        Self.updateMaterials(scene: scnView.scene, project: project, showGrid: showGrid)
     }
 
-    static func createScene(project: SkinProject) -> SCNScene {
+    static func createScene(project: SkinProject, showGrid: Bool) -> SCNScene {
         let scene = SCNScene()
         scene.background.contents = NSColor(red: 0.05, green: 0.05, blue: 0.08, alpha: 1)
 
@@ -84,7 +87,7 @@ struct SteveSceneView: NSViewRepresentable {
                 length: CGFloat(part.scnSize.z),
                 chamferRadius: 0
             )
-            box.materials = Self.materialsForPart(part.bodyPart, project: project)
+            box.materials = Self.materialsForPart(part.bodyPart, project: project, showGrid: showGrid)
 
             let node = SCNNode(geometry: box)
             node.name = part.name
@@ -122,19 +125,19 @@ struct SteveSceneView: NSViewRepresentable {
         return scene
     }
 
-    static func updateMaterials(scene: SCNScene?, project: SkinProject) {
+    static func updateMaterials(scene: SCNScene?, project: SkinProject, showGrid: Bool) {
         guard let scene = scene else { return }
         for part in steveParts {
             if let node = scene.rootNode.childNode(withName: part.name, recursively: true),
                let box = node.geometry as? SCNBox {
-                box.materials = materialsForPart(part.bodyPart, project: project)
+                box.materials = materialsForPart(part.bodyPart, project: project, showGrid: showGrid)
             }
         }
     }
 
     /// Erzeugt 6 Materials für ein Körperteil.
     /// SCNBox Reihenfolge: +X(Right), -X(Left), +Y(Top), -Y(Bottom), +Z(Front), -Z(Back)
-    static func materialsForPart(_ bodyPart: SkinBodyPart, project: SkinProject) -> [SCNMaterial] {
+    static func materialsForPart(_ bodyPart: SkinBodyPart, project: SkinProject, showGrid: Bool = false) -> [SCNMaterial] {
         // SCNBox face order: +X, -X, +Y, -Y, +Z, -Z
         // Mapped to SkinFace: right, left, top, bottom, front, back
         let faceOrder: [SkinFace] = [.right, .left, .top, .bottom, .front, .back]
@@ -144,10 +147,10 @@ struct SteveSceneView: NSViewRepresentable {
 
             // Base Layer Textur
             let baseCanvas = project.extractRegion(bodyPart: bodyPart, face: face, layer: .base)
-            if let baseImage = baseCanvas.toCGImage() {
+            if let baseImage = baseCanvas.toCGImage(showGrid: showGrid) {
                 // Compositing: Base + Overlay
                 let overlayCanvas = project.extractRegion(bodyPart: bodyPart, face: face, layer: .overlay)
-                if let overlayImage = overlayCanvas.toCGImage() {
+                if let overlayImage = overlayCanvas.toCGImage(showGrid: showGrid) {
                     // Composite both layers
                     let composited = compositeImages(base: baseImage, overlay: overlayImage,
                                                       width: baseCanvas.width, height: baseCanvas.height)
@@ -190,21 +193,22 @@ struct SteveSceneView: NSViewRepresentable {
 
 struct SteveSceneView: UIViewRepresentable {
     let project: SkinProject
+    var showGrid: Bool = false
 
     func makeUIView(context: Context) -> SCNView {
         let scnView = SCNView()
         scnView.allowsCameraControl = true
         scnView.backgroundColor = UIColor(red: 0.05, green: 0.05, blue: 0.08, alpha: 1)
         scnView.antialiasingMode = .none
-        scnView.scene = Self.createScene(project: project)
+        scnView.scene = Self.createScene(project: project, showGrid: showGrid)
         return scnView
     }
 
     func updateUIView(_ scnView: SCNView, context: Context) {
-        Self.updateMaterials(scene: scnView.scene, project: project)
+        Self.updateMaterials(scene: scnView.scene, project: project, showGrid: showGrid)
     }
 
-    static func createScene(project: SkinProject) -> SCNScene {
+    static func createScene(project: SkinProject, showGrid: Bool) -> SCNScene {
         let scene = SCNScene()
         scene.background.contents = UIColor(red: 0.05, green: 0.05, blue: 0.08, alpha: 1)
 
@@ -215,7 +219,7 @@ struct SteveSceneView: UIViewRepresentable {
                 length: CGFloat(part.scnSize.z),
                 chamferRadius: 0
             )
-            box.materials = Self.materialsForPart(part.bodyPart, project: project)
+            box.materials = Self.materialsForPart(part.bodyPart, project: project, showGrid: showGrid)
             let node = SCNNode(geometry: box)
             node.name = part.name
             node.position = part.position
@@ -246,22 +250,22 @@ struct SteveSceneView: UIViewRepresentable {
         return scene
     }
 
-    static func updateMaterials(scene: SCNScene?, project: SkinProject) {
+    static func updateMaterials(scene: SCNScene?, project: SkinProject, showGrid: Bool) {
         guard let scene = scene else { return }
         for part in steveParts {
             if let node = scene.rootNode.childNode(withName: part.name, recursively: true),
                let box = node.geometry as? SCNBox {
-                box.materials = materialsForPart(part.bodyPart, project: project)
+                box.materials = materialsForPart(part.bodyPart, project: project, showGrid: showGrid)
             }
         }
     }
 
-    static func materialsForPart(_ bodyPart: SkinBodyPart, project: SkinProject) -> [SCNMaterial] {
+    static func materialsForPart(_ bodyPart: SkinBodyPart, project: SkinProject, showGrid: Bool = false) -> [SCNMaterial] {
         let faceOrder: [SkinFace] = [.right, .left, .top, .bottom, .front, .back]
         return faceOrder.map { face in
             let material = SCNMaterial()
             let baseCanvas = project.extractRegion(bodyPart: bodyPart, face: face, layer: .base)
-            if let baseImage = baseCanvas.toCGImage() {
+            if let baseImage = baseCanvas.toCGImage(showGrid: showGrid) {
                 material.diffuse.contents = baseImage
             }
             material.diffuse.magnificationFilter = .nearest

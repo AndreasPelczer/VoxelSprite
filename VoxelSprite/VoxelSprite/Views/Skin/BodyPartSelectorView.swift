@@ -22,7 +22,7 @@ struct BodyPartSelectorView: View {
 
             HStack {
                 Text("KÖRPERTEIL")
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .font(.system(size: 12, weight: .heavy, design: .monospaced))
                     .foregroundStyle(.secondary)
                 Spacer()
                 Text(skinVM.activeBodyPart.rawValue)
@@ -47,7 +47,7 @@ struct BodyPartSelectorView: View {
 
             HStack {
                 Text("FACE")
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .font(.system(size: 12, weight: .heavy, design: .monospaced))
                     .foregroundStyle(.secondary)
                 Spacer()
                 Text(skinVM.activeFace.rawValue)
@@ -64,7 +64,7 @@ struct BodyPartSelectorView: View {
 
             HStack {
                 Text("LAYER")
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .font(.system(size: 12, weight: .heavy, design: .monospaced))
                     .foregroundStyle(.secondary)
                 Spacer()
             }
@@ -77,9 +77,14 @@ struct BodyPartSelectorView: View {
 
             // Dimensionen-Info
             let region = SkinUVMap.region(bodyPart: skinVM.activeBodyPart, face: skinVM.activeFace, layer: skinVM.activeLayer)
-            Text("\(region.width)×\(region.height) px")
-                .font(.system(size: 9, weight: .medium, design: .monospaced))
-                .foregroundStyle(.tertiary)
+            HStack {
+                Spacer()
+                Text("\(region.width) × \(region.height) px")
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .padding(.vertical, 2)
+                Spacer()
+            }
         }
     }
 
@@ -94,14 +99,14 @@ struct BodyPartSelectorView: View {
                 skinVM.selectBodyPart(part)
             }
         } label: {
-            VStack(spacing: 2) {
+            VStack(spacing: 3) {
                 Image(systemName: part.iconName)
-                    .font(.system(size: 14, weight: isActive ? .bold : .medium))
+                    .font(.system(size: 16, weight: isActive ? .bold : .medium))
                 Text(part.rawValue)
-                    .font(.system(size: 8, weight: .semibold))
+                    .font(.system(size: 9, weight: .semibold))
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 6)
+            .padding(.vertical, 8)
             .background(
                 RoundedRectangle(cornerRadius: 6)
                     .fill(isActive ? teal.opacity(0.2) : Color.clear)
@@ -143,7 +148,7 @@ struct BodyPartSelectorView: View {
         }
     }
 
-    private var faceButtonWidth: CGFloat { 42 }
+    private var faceButtonWidth: CGFloat { 52 }
 
     private func faceButton(_ face: SkinFace) -> some View {
         let isActive = face == skinVM.activeFace
@@ -155,8 +160,8 @@ struct BodyPartSelectorView: View {
             }
         } label: {
             Text(face.shortLabel)
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                .frame(width: faceButtonWidth, height: 28)
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .frame(width: faceButtonWidth, height: 32)
                 .background(
                     RoundedRectangle(cornerRadius: 4)
                         .fill(isActive ? teal.opacity(0.2) : Color(red: 0.12, green: 0.12, blue: 0.16))
@@ -181,14 +186,14 @@ struct BodyPartSelectorView: View {
                 skinVM.selectLayer(layer)
             }
         } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: 5) {
                 Image(systemName: layer.iconName)
-                    .font(.system(size: 10))
+                    .font(.system(size: 12))
                 Text(layer.rawValue)
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 6)
+            .padding(.vertical, 8)
             .background(
                 RoundedRectangle(cornerRadius: 6)
                     .fill(isActive ? teal.opacity(0.2) : Color.clear)
