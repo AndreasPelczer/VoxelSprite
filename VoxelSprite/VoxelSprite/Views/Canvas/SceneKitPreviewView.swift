@@ -96,9 +96,9 @@ struct BlockCubeSceneView: NSViewRepresentable {
     }
 
     /// Erzeugt 6 Materials für die Würfelflächen.
-    /// SCNBox Reihenfolge: +X(East), -X(West), +Y(Top), -Y(Bottom), +Z(North), -Z(South)
+    /// SCNBox Reihenfolge: +X(East), -X(West), +Y(Top), -Y(Bottom), +Z(South), -Z(North)
     static func createMaterials(project: BlockProject, showGrid: Bool) -> [SCNMaterial] {
-        let faceOrder: [FaceType] = [.east, .west, .top, .bottom, .north, .south]
+        let faceOrder: [FaceType] = [.east, .west, .top, .bottom, .south, .north]
         return faceOrder.map { faceType in
             let material = SCNMaterial()
             let canvas = project.canvas(for: faceType)
@@ -172,7 +172,7 @@ struct BlockCubeSceneView: UIViewRepresentable {
     }
 
     static func createMaterials(project: BlockProject, showGrid: Bool) -> [SCNMaterial] {
-        let faceOrder: [FaceType] = [.east, .west, .top, .bottom, .north, .south]
+        let faceOrder: [FaceType] = [.east, .west, .top, .bottom, .south, .north]
         return faceOrder.map { faceType in
             let material = SCNMaterial()
             let canvas = project.canvas(for: faceType)

@@ -3,7 +3,7 @@
 //  VoxelSprite
 //
 //  Ein Pixel-Raster mit variabler Größe.
-//  Unterstützt quadratische (16×16) und rechteckige Canvases (z.B. 8×12 für Steve-Faces).
+//  Unterstützt quadratische (16×16) und rechteckige Canvases (z.B. 8×12 für Andy-Faces).
 //
 
 import SwiftUI
@@ -43,7 +43,7 @@ struct PixelCanvas {
         self.init(width: gridSize, height: gridSize)
     }
 
-    /// Rechteckiges Canvas (für Steve-Faces wie 8×12)
+    /// Rechteckiges Canvas (für Andy-Faces wie 8×12)
     init(width: Int, height: Int) {
         self.width = max(1, min(128, width))
         self.height = max(1, min(128, height))

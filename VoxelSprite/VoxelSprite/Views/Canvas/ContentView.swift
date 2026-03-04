@@ -228,7 +228,7 @@ struct ContentView: View {
 
     private var modeSwitcher: some View {
         VStack(spacing: 4) {
-            // Erste Reihe: Block, Item, Steve
+            // Erste Reihe: Block, Item, Andy
             HStack(spacing: 4) {
                 ForEach([CanvasViewModel.EditorMode.block, .item, .skin], id: \.self) { mode in
                     modeButton(mode)
@@ -824,7 +824,7 @@ struct ContentView: View {
             .help("Pixel-Grid auf 3D-Modell")
         }
 
-        StevePreviewView(showGrid: show3DGrid)
+        AndyPreviewView(showGrid: show3DGrid)
     }
 
     // MARK: - Overlay Section (Block + Skin)
@@ -1024,7 +1024,7 @@ struct ContentView: View {
             HStack {
                 Text("Skin-Name:")
                     .font(.system(size: 11, weight: .medium))
-                TextField("steve", text: $skinVM.project.name)
+                TextField("andy", text: $skinVM.project.name)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 11, design: .monospaced))
                     .controlSize(.small)

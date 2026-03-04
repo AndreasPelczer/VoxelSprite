@@ -2,7 +2,7 @@
 //  BodyPartSelectorView.swift
 //  VoxelSprite
 //
-//  Auswahl von Körperteil, Face und Layer für den Steve-Skin-Editor.
+//  Auswahl von Körperteil, Face und Layer für den Andy-Skin-Editor.
 //  Zeigt Thumbnails der Körperteil-Faces als klickbare Buttons.
 //
 
