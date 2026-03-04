@@ -99,7 +99,7 @@ struct ToolBarView: View {
 
             actionButton(
                 icon: "arrow.uturn.backward",
-                label: "Rückgängig",
+                label: "Rückgängig (⌘Z)",
                 enabled: canvasVM.canUndo
             ) {
                 canvasVM.undo()
@@ -107,7 +107,7 @@ struct ToolBarView: View {
 
             actionButton(
                 icon: "arrow.uturn.forward",
-                label: "Wiederherstellen",
+                label: "Wiederherstellen (⇧⌘Z)",
                 enabled: canvasVM.canRedo
             ) {
                 canvasVM.redo()
@@ -346,7 +346,7 @@ struct ToolBarView: View {
                 )
         }
         .buttonStyle(.plain)
-        .help(tool.rawValue)
+        .help("\(tool.rawValue) (\(tool.shortcutHint))")
         .keyboardShortcut(shortcutKey(for: tool), modifiers: [])
     }
 

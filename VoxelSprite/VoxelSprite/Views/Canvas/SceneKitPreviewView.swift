@@ -45,7 +45,7 @@ struct SceneKitPreviewView: View {
                     orbitState: orbitState
                 )
             } else {
-                NonPaintableBlockView(project: blockVM.project, showGrid: showGrid)
+                NonPaintableBlockView(project: blockVM.project, showGrid: showGrid, activeFace: blockVM.activeFaceType)
             }
         }
         .frame(maxWidth: .infinity)
@@ -87,7 +87,7 @@ struct SceneKitPreviewView: View {
         scene.background.contents = bgColor
 
         let box = SCNBox(width: 1, height: 1, length: 1, chamferRadius: 0)
-        box.materials = Self.createMaterials(project: blockVM.project, showGrid: showGrid)
+        box.materials = Self.createMaterials(project: blockVM.project, showGrid: showGrid, activeFace: blockVM.activeFaceType)
         let cubeNode = SCNNode(geometry: box)
         cubeNode.name = "cube"
         scene.rootNode.addChildNode(cubeNode)
@@ -118,7 +118,7 @@ struct SceneKitPreviewView: View {
     private func updateMaterials() {
         guard let cubeNode = scene.rootNode.childNode(withName: "cube", recursively: true),
               let box = cubeNode.geometry as? SCNBox else { return }
-        box.materials = Self.createMaterials(project: blockVM.project, showGrid: showGrid)
+        box.materials = Self.createMaterials(project: blockVM.project, showGrid: showGrid, activeFace: blockVM.activeFaceType)
     }
 
     // MARK: - Paint Handling
@@ -164,7 +164,7 @@ struct SceneKitPreviewView: View {
 
     // MARK: - Materials
 
-    static func createMaterials(project: BlockProject, showGrid: Bool) -> [SCNMaterial] {
+    static func createMaterials(project: BlockProject, showGrid: Bool, activeFace: FaceType? = nil) -> [SCNMaterial] {
         let faceOrder: [FaceType] = [.east, .west, .top, .bottom, .south, .north]
         return faceOrder.map { faceType in
             let material = SCNMaterial()
@@ -178,6 +178,15 @@ struct SceneKitPreviewView: View {
             }
             material.lightingModel = .blinn
             material.isDoubleSided = false
+            // Aktive Seite mit Emission hervorheben
+            if let activeFace = activeFace, faceType == activeFace {
+                #if os(macOS)
+                material.emission.contents = NSColor(red: 0.0, green: 0.8, blue: 1.0, alpha: 1.0)
+                #else
+                material.emission.contents = UIColor(red: 0.0, green: 0.8, blue: 1.0, alpha: 1.0)
+                #endif
+                material.emission.intensity = 0.3
+            }
             return material
         }
     }
@@ -190,6 +199,7 @@ struct SceneKitPreviewView: View {
 private struct NonPaintableBlockView: NSViewRepresentable {
     let project: BlockProject
     var showGrid: Bool = false
+    var activeFace: FaceType = .north
 
     func makeNSView(context: Context) -> SCNView {
         let scnView = SCNView()
@@ -203,7 +213,7 @@ private struct NonPaintableBlockView: NSViewRepresentable {
     func updateNSView(_ scnView: SCNView, context: Context) {
         guard let cubeNode = scnView.scene?.rootNode.childNode(withName: "cube", recursively: true),
               let box = cubeNode.geometry as? SCNBox else { return }
-        box.materials = SceneKitPreviewView.createMaterials(project: project, showGrid: showGrid)
+        box.materials = SceneKitPreviewView.createMaterials(project: project, showGrid: showGrid, activeFace: activeFace)
     }
 
     static func createScene() -> SCNScene {
@@ -245,6 +255,7 @@ private struct NonPaintableBlockView: NSViewRepresentable {
 private struct NonPaintableBlockView: UIViewRepresentable {
     let project: BlockProject
     var showGrid: Bool = false
+    var activeFace: FaceType = .north
 
     func makeUIView(context: Context) -> SCNView {
         let scnView = SCNView()
@@ -258,7 +269,7 @@ private struct NonPaintableBlockView: UIViewRepresentable {
     func updateUIView(_ scnView: SCNView, context: Context) {
         guard let cubeNode = scnView.scene?.rootNode.childNode(withName: "cube", recursively: true),
               let box = cubeNode.geometry as? SCNBox else { return }
-        box.materials = SceneKitPreviewView.createMaterials(project: project, showGrid: showGrid)
+        box.materials = SceneKitPreviewView.createMaterials(project: project, showGrid: showGrid, activeFace: activeFace)
     }
 
     static func createScene() -> SCNScene {

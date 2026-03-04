@@ -44,7 +44,7 @@ struct AndyPreviewView: View {
                     orbitState: orbitState
                 )
             } else {
-                NonPaintableAndyView(project: skinVM.project, showGrid: showGrid)
+                NonPaintableAndyView(project: skinVM.project, showGrid: showGrid, activeBodyPart: skinVM.activeBodyPart, activeFace: skinVM.activeFace)
             }
         }
         .frame(maxWidth: .infinity, minHeight: 300)
@@ -87,10 +87,11 @@ struct AndyPreviewView: View {
                 length: CGFloat(part.scnSize.z),
                 chamferRadius: 0
             )
-            box.materials = Self.materialsForPart(part.bodyPart, project: skinVM.project, showGrid: showGrid)
+            box.materials = Self.materialsForPart(part.bodyPart, project: skinVM.project, showGrid: showGrid, activeBodyPart: skinVM.activeBodyPart, activeFace: skinVM.activeFace)
             let node = SCNNode(geometry: box)
             node.name = part.name
             node.position = part.position
+            node.opacity = part.bodyPart == skinVM.activeBodyPart ? 1.0 : 0.7
             scene.rootNode.addChildNode(node)
         }
 
@@ -120,7 +121,8 @@ struct AndyPreviewView: View {
         for part in andyParts {
             if let node = scene.rootNode.childNode(withName: part.name, recursively: true),
                let box = node.geometry as? SCNBox {
-                box.materials = Self.materialsForPart(part.bodyPart, project: skinVM.project, showGrid: showGrid)
+                box.materials = Self.materialsForPart(part.bodyPart, project: skinVM.project, showGrid: showGrid, activeBodyPart: skinVM.activeBodyPart, activeFace: skinVM.activeFace)
+                node.opacity = part.bodyPart == skinVM.activeBodyPart ? 1.0 : 0.7
             }
         }
     }
@@ -179,8 +181,9 @@ struct AndyPreviewView: View {
 
     // MARK: - Materials
 
-    static func materialsForPart(_ bodyPart: SkinBodyPart, project: SkinProject, showGrid: Bool = false) -> [SCNMaterial] {
+    static func materialsForPart(_ bodyPart: SkinBodyPart, project: SkinProject, showGrid: Bool = false, activeBodyPart: SkinBodyPart? = nil, activeFace: SkinFace? = nil) -> [SCNMaterial] {
         let faceOrder: [SkinFace] = [.right, .left, .top, .bottom, .front, .back]
+        let isActivePart = activeBodyPart != nil && bodyPart == activeBodyPart
         return faceOrder.map { face in
             let material = SCNMaterial()
             let baseCanvas = project.extractRegion(bodyPart: bodyPart, face: face, layer: .base)
@@ -200,6 +203,15 @@ struct AndyPreviewView: View {
             material.diffuse.wrapT = .clamp
             material.lightingModel = .blinn
             material.isDoubleSided = false
+            // Aktive Seite des aktiven Körperteils hervorheben
+            if isActivePart, let activeFace = activeFace, face == activeFace {
+                #if os(macOS)
+                material.emission.contents = NSColor(red: 0.0, green: 0.8, blue: 1.0, alpha: 1.0)
+                #else
+                material.emission.contents = UIColor(red: 0.0, green: 0.8, blue: 1.0, alpha: 1.0)
+                #endif
+                material.emission.intensity = 0.3
+            }
             return material
         }
     }
@@ -243,13 +255,15 @@ private let andyParts: [AndyPartDef] = [
 private struct NonPaintableAndyView: NSViewRepresentable {
     let project: SkinProject
     var showGrid: Bool = false
+    var activeBodyPart: SkinBodyPart = .head
+    var activeFace: SkinFace = .front
 
     func makeNSView(context: Context) -> SCNView {
         let scnView = SCNView()
         scnView.allowsCameraControl = true
         scnView.backgroundColor = NSColor(red: 0.05, green: 0.05, blue: 0.08, alpha: 1)
         scnView.antialiasingMode = .none
-        scnView.scene = Self.createScene(project: project, showGrid: showGrid)
+        scnView.scene = Self.createScene(project: project, showGrid: showGrid, activeBodyPart: activeBodyPart, activeFace: activeFace)
         return scnView
     }
 
@@ -257,12 +271,13 @@ private struct NonPaintableAndyView: NSViewRepresentable {
         for part in andyParts {
             if let node = scnView.scene?.rootNode.childNode(withName: part.name, recursively: true),
                let box = node.geometry as? SCNBox {
-                box.materials = AndyPreviewView.materialsForPart(part.bodyPart, project: project, showGrid: showGrid)
+                box.materials = AndyPreviewView.materialsForPart(part.bodyPart, project: project, showGrid: showGrid, activeBodyPart: activeBodyPart, activeFace: activeFace)
+                node.opacity = part.bodyPart == activeBodyPart ? 1.0 : 0.7
             }
         }
     }
 
-    static func createScene(project: SkinProject, showGrid: Bool) -> SCNScene {
+    static func createScene(project: SkinProject, showGrid: Bool, activeBodyPart: SkinBodyPart = .head, activeFace: SkinFace = .front) -> SCNScene {
         let scene = SCNScene()
         scene.background.contents = NSColor(red: 0.05, green: 0.05, blue: 0.08, alpha: 1)
 
@@ -273,10 +288,11 @@ private struct NonPaintableAndyView: NSViewRepresentable {
                 length: CGFloat(part.scnSize.z),
                 chamferRadius: 0
             )
-            box.materials = AndyPreviewView.materialsForPart(part.bodyPart, project: project, showGrid: showGrid)
+            box.materials = AndyPreviewView.materialsForPart(part.bodyPart, project: project, showGrid: showGrid, activeBodyPart: activeBodyPart, activeFace: activeFace)
             let node = SCNNode(geometry: box)
             node.name = part.name
             node.position = part.position
+            node.opacity = part.bodyPart == activeBodyPart ? 1.0 : 0.7
             scene.rootNode.addChildNode(node)
         }
 
@@ -313,13 +329,15 @@ private struct NonPaintableAndyView: NSViewRepresentable {
 private struct NonPaintableAndyView: UIViewRepresentable {
     let project: SkinProject
     var showGrid: Bool = false
+    var activeBodyPart: SkinBodyPart = .head
+    var activeFace: SkinFace = .front
 
     func makeUIView(context: Context) -> SCNView {
         let scnView = SCNView()
         scnView.allowsCameraControl = true
         scnView.backgroundColor = UIColor(red: 0.05, green: 0.05, blue: 0.08, alpha: 1)
         scnView.antialiasingMode = .none
-        scnView.scene = Self.createScene(project: project, showGrid: showGrid)
+        scnView.scene = Self.createScene(project: project, showGrid: showGrid, activeBodyPart: activeBodyPart, activeFace: activeFace)
         return scnView
     }
 
@@ -327,12 +345,13 @@ private struct NonPaintableAndyView: UIViewRepresentable {
         for part in andyParts {
             if let node = scnView.scene?.rootNode.childNode(withName: part.name, recursively: true),
                let box = node.geometry as? SCNBox {
-                box.materials = AndyPreviewView.materialsForPart(part.bodyPart, project: project, showGrid: showGrid)
+                box.materials = AndyPreviewView.materialsForPart(part.bodyPart, project: project, showGrid: showGrid, activeBodyPart: activeBodyPart, activeFace: activeFace)
+                node.opacity = part.bodyPart == activeBodyPart ? 1.0 : 0.7
             }
         }
     }
 
-    static func createScene(project: SkinProject, showGrid: Bool) -> SCNScene {
+    static func createScene(project: SkinProject, showGrid: Bool, activeBodyPart: SkinBodyPart = .head, activeFace: SkinFace = .front) -> SCNScene {
         let scene = SCNScene()
         scene.background.contents = UIColor(red: 0.05, green: 0.05, blue: 0.08, alpha: 1)
 
@@ -343,10 +362,11 @@ private struct NonPaintableAndyView: UIViewRepresentable {
                 length: CGFloat(part.scnSize.z),
                 chamferRadius: 0
             )
-            box.materials = AndyPreviewView.materialsForPart(part.bodyPart, project: project, showGrid: showGrid)
+            box.materials = AndyPreviewView.materialsForPart(part.bodyPart, project: project, showGrid: showGrid, activeBodyPart: activeBodyPart, activeFace: activeFace)
             let node = SCNNode(geometry: box)
             node.name = part.name
             node.position = part.position
+            node.opacity = part.bodyPart == activeBodyPart ? 1.0 : 0.7
             scene.rootNode.addChildNode(node)
         }
 

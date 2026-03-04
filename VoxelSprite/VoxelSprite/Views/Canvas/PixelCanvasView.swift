@@ -115,7 +115,11 @@ struct PixelCanvasView: View {
         .gesture(drawingGesture)
         #if os(macOS)
         .onHover { isHovering in
-            if !isHovering { hoveredPixel = nil }
+            if !isHovering {
+                hoveredPixel = nil
+                canvasVM.cursorX = nil
+                canvasVM.cursorY = nil
+            }
         }
         #endif
         #if os(macOS)
@@ -124,9 +128,13 @@ struct PixelCanvasView: View {
                 let (x, y) = pixelCoordinate(from: location)
                 if canvasVM.currentCanvas.isValid(x: x, y: y) {
                     hoveredPixel = (x, y)
+                    canvasVM.cursorX = x
+                    canvasVM.cursorY = y
                 }
             } onExit: {
                 hoveredPixel = nil
+                canvasVM.cursorX = nil
+                canvasVM.cursorY = nil
             }
         )
         #endif

@@ -145,6 +145,9 @@ struct ContentView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
+                    // MARK: - Statusleiste
+                    canvasStatusBar
+
                     // Animation Timeline (nur im Block-Modus)
                     if canvasVM.editorMode == .block {
                         AnimationTimelineView()
@@ -276,6 +279,55 @@ struct ContentView: View {
             .foregroundStyle(canvasVM.editorMode == mode ? accentTeal : .secondary)
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - Statusleiste
+
+    private var canvasStatusBar: some View {
+        HStack(spacing: 12) {
+            // Aktives Werkzeug
+            HStack(spacing: 4) {
+                Image(systemName: canvasVM.currentTool.iconName)
+                    .font(.system(size: 9, weight: .medium))
+                Text(canvasVM.currentTool.rawValue)
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+            }
+            .foregroundStyle(accentTeal.opacity(0.8))
+
+            Divider().frame(height: 10)
+
+            // Canvas-Größe
+            Text("\(canvasVM.canvasWidth)×\(canvasVM.canvasHeight) px")
+                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .foregroundStyle(.secondary)
+
+            Divider().frame(height: 10)
+
+            // Cursor-Position
+            if let cx = canvasVM.cursorX, let cy = canvasVM.cursorY {
+                Text("X: \(cx)  Y: \(cy)")
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("X: -  Y: -")
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.quaternary)
+            }
+
+            // Selection-Größe
+            if let sel = canvasVM.selection {
+                Divider().frame(height: 10)
+                Text("Sel: \(sel.width)×\(sel.height)")
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundStyle(accentTeal.opacity(0.6))
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 
     // MARK: - Block Sidebar
