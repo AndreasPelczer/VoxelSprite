@@ -10,6 +10,7 @@
 
 import SwiftUI
 import SceneKit
+import Combine
 
 // MARK: - Entity Preview View
 
@@ -73,7 +74,7 @@ struct EntityPreviewView: View {
                 updateMaterials()
             }
         }
-        .onChange(of: showGrid) { _ in
+        .onChange(of: showGrid) {
             if paintEnabled { updateMaterials() }
         }
     }
@@ -174,7 +175,6 @@ struct EntityPreviewView: View {
         let bodyParts = entityVM.project.entityType.bodyParts
         guard let partIndex = bodyParts.firstIndex(where: { $0.id == nodeName }) else { return }
 
-        let part = bodyParts[partIndex]
         let face = Self.boxFaceToSkinFace[faceIndex]
 
         // Zur richtigen Auswahl wechseln

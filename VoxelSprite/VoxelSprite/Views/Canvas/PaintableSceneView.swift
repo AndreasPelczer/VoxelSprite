@@ -12,6 +12,7 @@
 
 import SwiftUI
 import SceneKit
+import Combine
 
 // MARK: - Paint Callback
 

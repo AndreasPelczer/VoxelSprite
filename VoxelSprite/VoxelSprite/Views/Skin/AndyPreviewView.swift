@@ -10,6 +10,7 @@
 
 import SwiftUI
 import SceneKit
+import Combine
 
 struct AndyPreviewView: View {
 
@@ -63,7 +64,7 @@ struct AndyPreviewView: View {
         .onReceive(skinVM.objectWillChange) {
             if paintEnabled { updateMaterials() }
         }
-        .onChange(of: showGrid) { _ in
+        .onChange(of: showGrid) {
             if paintEnabled { updateMaterials() }
         }
     }

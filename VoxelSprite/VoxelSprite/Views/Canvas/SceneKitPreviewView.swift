@@ -10,6 +10,7 @@
 
 import SwiftUI
 import SceneKit
+import Combine
 
 // MARK: - Block Cube Preview
 
@@ -61,10 +62,10 @@ struct SceneKitPreviewView: View {
                 sceneReady = true
             }
         }
-        .onChange(of: blockVM.project.name) { _ in
+        .onChange(of: blockVM.project.name) {
             if paintEnabled { updateMaterials() }
         }
-        .onChange(of: showGrid) { _ in
+        .onChange(of: showGrid) {
             if paintEnabled { updateMaterials() }
         }
         // Materialien bei jeder Projektänderung updaten

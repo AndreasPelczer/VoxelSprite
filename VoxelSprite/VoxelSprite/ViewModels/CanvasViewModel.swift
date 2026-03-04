@@ -445,7 +445,7 @@ class CanvasViewModel: ObservableObject {
                 currentTool = .pen
             }
             return
-        case .line, .rectangle:
+        case .line, .rectangle, .select:
             break
         }
 
