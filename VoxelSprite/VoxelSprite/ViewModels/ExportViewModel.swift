@@ -60,6 +60,122 @@ class ExportViewModel: ObservableObject {
         self.itemViewModel = itemViewModel
     }
 
+    // MARK: - Export Preflight
+
+    struct PreflightWarning: Identifiable {
+        let id = UUID()
+        let severity: Severity
+        let message: String
+
+        enum Severity {
+            case error, warning, info
+            var iconName: String {
+                switch self {
+                case .error:   return "xmark.octagon.fill"
+                case .warning: return "exclamationmark.triangle.fill"
+                case .info:    return "info.circle.fill"
+                }
+            }
+            var color: Color {
+                switch self {
+                case .error:   return .red
+                case .warning: return .orange
+                case .info:    return .blue
+                }
+            }
+        }
+    }
+
+    /// Führt Preflight-Checks durch und gibt Warnungen zurück
+    func runPreflight(project: BlockProject) -> [PreflightWarning] {
+        var warnings: [PreflightWarning] = []
+
+        // 1. Namespace-Check
+        let ns = project.namespace
+        let nsRegex = /^[a-z0-9_.-]+$/
+        if ns.isEmpty {
+            warnings.append(.init(severity: .error, message: "Namespace ist leer"))
+        } else if ns.wholeMatch(of: nsRegex) == nil {
+            warnings.append(.init(severity: .error, message: "Namespace '\(ns)' enthält ungültige Zeichen (nur a-z, 0-9, _, -, .)"))
+        }
+
+        // 2. Block-Name-Check
+        let name = project.name
+        let nameRegex = /^[a-z0-9_.-]+$/
+        if name.isEmpty {
+            warnings.append(.init(severity: .error, message: "Block-Name ist leer"))
+        } else if name.wholeMatch(of: nameRegex) == nil {
+            warnings.append(.init(severity: .warning, message: "Block-Name '\(name)' enthält Sonderzeichen – kann zu Problemen führen"))
+        }
+
+        // 3. Leere Faces prüfen
+        var emptyFaces: [String] = []
+        for faceType in FaceType.allCases {
+            let face = project.face(for: faceType)
+            let canvas = face.canvas
+            let hasPixels = (0..<canvas.height).contains { y in
+                (0..<canvas.width).contains { x in canvas.pixel(at: x, y: y) != nil }
+            }
+            if !hasPixels {
+                emptyFaces.append(faceType.rawValue)
+            }
+        }
+        if !emptyFaces.isEmpty {
+            warnings.append(.init(severity: .warning, message: "Leere Faces: \(emptyFaces.joined(separator: ", "))"))
+        }
+
+        // 4. Pack-Format prüfen
+        if project.targetVersion == .java {
+            warnings.append(.init(severity: .info, message: "Java Edition 1.20+ (Pack Format 15)"))
+        } else {
+            warnings.append(.init(severity: .info, message: "Bedrock Edition"))
+        }
+
+        // 5. CTM ohne OptiFine-Warnung
+        if project.ctmMethod != .none {
+            warnings.append(.init(severity: .info, message: "CTM benötigt OptiFine oder Continuity Mod"))
+        }
+
+        // 6. Namespace-Duplikat-Check (Name = Standard "block")
+        if name == "block" || name == "stone" || name == "dirt" || name == "grass_block" {
+            warnings.append(.init(severity: .warning, message: "Name '\(name)' kollidiert mit Vanilla-Block"))
+        }
+
+        return warnings
+    }
+
+    /// Preflight für Item-Export
+    func runItemPreflight(project: ItemProject) -> [PreflightWarning] {
+        var warnings: [PreflightWarning] = []
+
+        let ns = project.namespace
+        let nsRegex = /^[a-z0-9_.-]+$/
+        if ns.isEmpty {
+            warnings.append(.init(severity: .error, message: "Namespace ist leer"))
+        } else if ns.wholeMatch(of: nsRegex) == nil {
+            warnings.append(.init(severity: .error, message: "Namespace enthält ungültige Zeichen"))
+        }
+
+        let name = project.name
+        if name.isEmpty {
+            warnings.append(.init(severity: .error, message: "Item-Name ist leer"))
+        } else if name.wholeMatch(of: nsRegex) == nil {
+            warnings.append(.init(severity: .warning, message: "Item-Name '\(name)' enthält Sonderzeichen"))
+        }
+
+        // Leere Layer prüfen
+        let emptyLayers = project.layers.enumerated().filter { (_, canvas) in
+            !(0..<canvas.height).contains { y in
+                (0..<canvas.width).contains { x in canvas.pixel(at: x, y: y) != nil }
+            }
+        }
+        if !emptyLayers.isEmpty {
+            warnings.append(.init(severity: .warning, message: "\(emptyLayers.count) leere Layer"))
+        }
+
+        return warnings
+    }
+
     // MARK: - Unique Filename
 
     private func uniqueFileName(base: String, ext: String) -> String {

@@ -144,7 +144,8 @@ struct PixelCanvas {
 
     /// Erzeugt ein PixelCanvas aus einem CGImage.
     /// Skaliert das Bild auf die Zielgröße falls angegeben, sonst nutzt die Originalgröße.
-    static func fromCGImage(_ cgImage: CGImage, targetWidth: Int? = nil, targetHeight: Int? = nil) -> PixelCanvas? {
+    /// `nearestNeighbor`: true = pixel-scharfe Skalierung (für Pixel Art), false = bilineare Glättung
+    static func fromCGImage(_ cgImage: CGImage, targetWidth: Int? = nil, targetHeight: Int? = nil, nearestNeighbor: Bool = true) -> PixelCanvas? {
         let w = targetWidth ?? cgImage.width
         let h = targetHeight ?? cgImage.height
         guard w > 0, w <= 128, h > 0, h <= 128 else { return nil }
@@ -160,7 +161,7 @@ struct PixelCanvas {
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else { return nil }
 
-        context.interpolationQuality = .none
+        context.interpolationQuality = nearestNeighbor ? .none : .medium
         context.draw(cgImage, in: CGRect(x: 0, y: 0, width: w, height: h))
 
         guard let data = context.data else { return nil }

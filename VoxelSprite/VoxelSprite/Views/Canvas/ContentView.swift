@@ -734,6 +734,24 @@ struct ContentView: View {
                 exportBadge("\(itemVM.project.layerCount) Layer", icon: "square.stack", color: .blue)
             }
 
+            // Item Preflight Warnings
+            let itemWarnings = exportVM.runItemPreflight(project: itemVM.project)
+            let itemHasErrors = itemWarnings.contains { $0.severity == .error }
+            if !itemWarnings.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(itemWarnings) { warning in
+                        HStack(spacing: 4) {
+                            Image(systemName: warning.severity.iconName)
+                                .font(.system(size: 8))
+                                .foregroundStyle(warning.severity.color)
+                            Text(warning.message)
+                                .font(.system(size: 9))
+                                .foregroundStyle(warning.severity == .info ? .secondary : .primary)
+                        }
+                    }
+                }
+            }
+
             // Export-Fortschritt
             if exportVM.isExporting {
                 VStack(spacing: 4) {
@@ -758,7 +776,7 @@ struct ContentView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 .tint(accentTeal)
-                .disabled(exportVM.isExporting)
+                .disabled(exportVM.isExporting || itemHasErrors)
 
                 Button {
                     exportVM.exportItemResourcepack()
@@ -770,7 +788,7 @@ struct ContentView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 .tint(accentTeal.opacity(0.7))
-                .disabled(exportVM.isExporting)
+                .disabled(exportVM.isExporting || itemHasErrors)
             }
         }
         .padding(10)
@@ -890,6 +908,24 @@ struct ContentView: View {
             // Export-Info
             exportInfoBadges
 
+            // Preflight Warnings
+            let preflightWarnings = exportVM.runPreflight(project: blockVM.project)
+            let hasErrors = preflightWarnings.contains { $0.severity == .error }
+            if !preflightWarnings.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(preflightWarnings) { warning in
+                        HStack(spacing: 4) {
+                            Image(systemName: warning.severity.iconName)
+                                .font(.system(size: 8))
+                                .foregroundStyle(warning.severity.color)
+                            Text(warning.message)
+                                .font(.system(size: 9))
+                                .foregroundStyle(warning.severity == .info ? .secondary : .primary)
+                        }
+                    }
+                }
+            }
+
             // Export-Fortschritt
             if exportVM.isExporting {
                 VStack(spacing: 4) {
@@ -914,7 +950,7 @@ struct ContentView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 .tint(accentTeal)
-                .disabled(exportVM.isExporting)
+                .disabled(exportVM.isExporting || hasErrors)
 
                 Button {
                     exportVM.exportResourcepack()
@@ -926,7 +962,7 @@ struct ContentView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 .tint(accentTeal.opacity(0.7))
-                .disabled(exportVM.isExporting)
+                .disabled(exportVM.isExporting || hasErrors)
             }
         }
         .padding(10)
