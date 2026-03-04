@@ -8,6 +8,7 @@
 //  - Blockstate mit Rotations-Varianten
 //  - CTM Export (Tiles + .properties)
 //  - block.json / blockstate.json
+//  - Item-Texturen + item.json
 //  - Komplettes Resourcepack-ZIP
 //
 
@@ -34,9 +35,10 @@ class ExportViewModel: ObservableObject {
     @Published var exportStatus: String = ""
     @Published var transparentBackground: Bool = true
 
-    // MARK: - Referenz
+    // MARK: - Referenzen
 
     private weak var blockViewModel: BlockViewModel?
+    private weak var itemViewModel: ItemViewModel?
 
     // MARK: - Init
 
@@ -44,6 +46,10 @@ class ExportViewModel: ObservableObject {
 
     func connect(to blockViewModel: BlockViewModel) {
         self.blockViewModel = blockViewModel
+    }
+
+    func connect(to itemViewModel: ItemViewModel) {
+        self.itemViewModel = itemViewModel
     }
 
     // MARK: - Unique Filename
@@ -620,6 +626,192 @@ class ExportViewModel: ObservableObject {
         #else
         return nil
         #endif
+    }
+
+    // MARK: - Item PNG Export
+
+    /// Exportiert das Item als PNG (composited)
+    func exportItemPNG() {
+        guard let itemVM = itemViewModel else { return }
+
+        isExporting = true
+        errorMessage = nil
+        exportProgress = 0
+        exportStatus = "Item wird exportiert…"
+
+        let snapshot = itemVM.project
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+
+            do {
+                let urls = try self.createItemPNGs(project: snapshot)
+
+                DispatchQueue.main.async {
+                    self.exportProgress = 1.0
+                    self.exportStatus = "Fertig!"
+                    self.exportedFileURL = urls.first
+                    self.additionalExportURLs = Array(urls.dropFirst())
+                    self.showShareSheet = true
+                    self.isExporting = false
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.errorMessage = "Export fehlgeschlagen: \(error.localizedDescription)"
+                    self.isExporting = false
+                    self.exportProgress = 0
+                    self.exportStatus = ""
+                }
+            }
+        }
+    }
+
+    private func createItemPNGs(project: ItemProject) throws -> [URL] {
+        var urls: [URL] = []
+
+        for (index, layer) in project.layers.enumerated() {
+            guard let cgImage = renderCanvasToCGImage(layer, gridSize: project.gridSize) else {
+                throw ExportError.frameRenderFailed
+            }
+            guard let pngData = cgImageToPNGData(cgImage) else {
+                throw ExportError.pngEncodingFailed
+            }
+
+            let texName = project.textureName(for: index)
+            let fileName = "\(texName).png"
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+            try pngData.write(to: url, options: .atomic)
+            urls.append(url)
+
+            DispatchQueue.main.async { [weak self] in
+                self?.exportProgress = Double(index + 1) / Double(project.layers.count) * 0.9
+                self?.exportStatus = "Layer \(index)…"
+            }
+        }
+
+        return urls
+    }
+
+    // MARK: - Item Resourcepack Export
+
+    /// Exportiert ein Item-Resourcepack
+    func exportItemResourcepack() {
+        guard let itemVM = itemViewModel else { return }
+
+        isExporting = true
+        errorMessage = nil
+        exportProgress = 0
+        exportStatus = "Item-Resourcepack wird erstellt…"
+
+        let snapshot = itemVM.project
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+
+            do {
+                let url = try self.createItemResourcepack(project: snapshot)
+
+                DispatchQueue.main.async {
+                    self.exportProgress = 1.0
+                    self.exportStatus = "Fertig!"
+                    self.exportedFileURL = url
+                    self.showShareSheet = true
+                    self.isExporting = false
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.errorMessage = "Item-Export fehlgeschlagen: \(error.localizedDescription)"
+                    self.isExporting = false
+                    self.exportProgress = 0
+                    self.exportStatus = ""
+                }
+            }
+        }
+    }
+
+    private func createItemResourcepack(project: ItemProject) throws -> URL {
+        let fm = FileManager.default
+        let baseName = uniqueFileName(base: project.name, ext: "")
+        let packDir = fm.temporaryDirectory.appendingPathComponent("resourcepack_item_\(baseName)")
+
+        // Ordnerstruktur
+        let texturesDir = packDir
+            .appendingPathComponent("assets/\(project.namespace)/textures/item")
+        let modelsDir = packDir
+            .appendingPathComponent("assets/\(project.namespace)/models/item")
+
+        try fm.createDirectory(at: texturesDir, withIntermediateDirectories: true)
+        try fm.createDirectory(at: modelsDir, withIntermediateDirectories: true)
+
+        DispatchQueue.main.async { [weak self] in
+            self?.exportProgress = 0.1
+            self?.exportStatus = "Texturen…"
+        }
+
+        // 1. Texturen exportieren (pro Layer)
+        for (index, layer) in project.layers.enumerated() {
+            guard let cgImage = renderCanvasToCGImage(layer, gridSize: project.gridSize) else {
+                throw ExportError.frameRenderFailed
+            }
+            guard let pngData = cgImageToPNGData(cgImage) else {
+                throw ExportError.pngEncodingFailed
+            }
+
+            let texName = project.textureName(for: index)
+            try pngData.write(to: texturesDir.appendingPathComponent("\(texName).png"), options: .atomic)
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            self?.exportProgress = 0.5
+            self?.exportStatus = "Item Model…"
+        }
+
+        // 2. Item Model JSON
+        let modelJSON = createItemModel(project: project)
+        let modelData = try JSONSerialization.data(withJSONObject: modelJSON, options: .prettyPrinted)
+        try modelData.write(to: modelsDir.appendingPathComponent("\(project.name).json"), options: .atomic)
+
+        DispatchQueue.main.async { [weak self] in
+            self?.exportProgress = 0.85
+            self?.exportStatus = "pack.mcmeta…"
+        }
+
+        // 3. pack.mcmeta
+        let packMeta = createItemPackMeta(project: project)
+        let packMetaData = try JSONSerialization.data(withJSONObject: packMeta, options: .prettyPrinted)
+        try packMetaData.write(to: packDir.appendingPathComponent("pack.mcmeta"), options: .atomic)
+
+        return packDir
+    }
+
+    /// Item Model JSON
+    private func createItemModel(project: ItemProject) -> [String: Any] {
+        var textures: [String: String] = [:]
+
+        for index in 0..<project.layers.count {
+            let texName = project.textureName(for: index)
+            textures["layer\(index)"] = "\(project.namespace):item/\(texName)"
+        }
+
+        return [
+            "parent": project.displayType.parent,
+            "textures": textures
+        ]
+    }
+
+    private func createItemPackMeta(project: ItemProject) -> [String: Any] {
+        let packFormat: Int
+        switch project.targetVersion {
+        case .java:    packFormat = 15
+        case .bedrock: packFormat = 2
+        }
+
+        return [
+            "pack": [
+                "pack_format": packFormat,
+                "description": "VoxelSprite Item: \(project.name)"
+            ]
+        ]
     }
 
     // MARK: - Aufräumen

@@ -18,6 +18,7 @@ struct VoxelSpriteApp: App {
     @StateObject private var blockVM = BlockViewModel()
     @StateObject private var canvasVM = CanvasViewModel()
     @StateObject private var exportVM = ExportViewModel()
+    @StateObject private var itemVM = ItemViewModel()
     @StateObject private var paletteManager = PaletteManager()
     @StateObject private var skinVM = SkinViewModel()
 
@@ -37,12 +38,15 @@ struct VoxelSpriteApp: App {
                 .environmentObject(blockVM)
                 .environmentObject(canvasVM)
                 .environmentObject(exportVM)
+                .environmentObject(itemVM)
                 .environmentObject(paletteManager)
                 .environmentObject(skinVM)
                 .onAppear {
                     canvasVM.connect(to: blockVM)
+                    canvasVM.connect(to: itemVM)
                     canvasVM.connect(to: skinVM)
                     exportVM.connect(to: blockVM)
+                    exportVM.connect(to: itemVM)
                     blockVM.startAutosave()
                 }
                 .onChange(of: scenePhase) { _, newPhase in
