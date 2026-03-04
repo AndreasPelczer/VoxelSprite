@@ -74,6 +74,16 @@ class CanvasViewModel: ObservableObject {
     @Published var overlayFaceType: FaceType?
     @Published var faceOverlayOpacity: Double = 0.3
 
+    // MARK: - Wrap Painting (Tile-Modus)
+
+    /// Wenn aktiv, wrappen Zeichenoperationen über Canvas-Kanten
+    @Published var wrapPaintingEnabled: Bool = false
+
+    // MARK: - Tile Check
+
+    /// Ergebnis der letzten Tile-Seamless-Prüfung
+    @Published var tileCheckResult: PixelCanvas.TileCheckResult?
+
     // MARK: - Zoom
 
     @Published var zoomScale: CGFloat = 1.0
@@ -286,8 +296,14 @@ class CanvasViewModel: ObservableObject {
         switch currentTool {
         case .pen:
             canvas.setPixel(at: x, y: y, color: currentColor)
+            if wrapPaintingEnabled {
+                applyWrappedPixels(canvas: &canvas, x: x, y: y, color: currentColor)
+            }
         case .eraser:
             canvas.setPixel(at: x, y: y, color: nil)
+            if wrapPaintingEnabled {
+                applyWrappedPixels(canvas: &canvas, x: x, y: y, color: nil)
+            }
         case .fill:
             floodFill(canvas: &canvas, x: x, y: y, newColor: currentColor)
         case .eyedropper:
@@ -301,6 +317,22 @@ class CanvasViewModel: ObservableObject {
         }
 
         updateCurrentCanvas(canvas)
+    }
+
+    /// Spiegelt Pixel auf die gegenüberliegende Kante (für nahtlose Texturen)
+    private func applyWrappedPixels(canvas: inout PixelCanvas, x: Int, y: Int, color: Color?) {
+        let w = canvas.width, h = canvas.height
+        // Wenn am linken/rechten Rand: auch auf der anderen Seite zeichnen
+        if x == 0 { canvas.setPixel(at: w - 1, y: y, color: color) }
+        if x == w - 1 { canvas.setPixel(at: 0, y: y, color: color) }
+        // Wenn am oberen/unteren Rand: auch auf der anderen Seite zeichnen
+        if y == 0 { canvas.setPixel(at: x, y: h - 1, color: color) }
+        if y == h - 1 { canvas.setPixel(at: x, y: 0, color: color) }
+        // Ecken
+        if x == 0 && y == 0 { canvas.setPixel(at: w - 1, y: h - 1, color: color) }
+        if x == 0 && y == h - 1 { canvas.setPixel(at: w - 1, y: 0, color: color) }
+        if x == w - 1 && y == 0 { canvas.setPixel(at: 0, y: h - 1, color: color) }
+        if x == w - 1 && y == h - 1 { canvas.setPixel(at: 0, y: 0, color: color) }
     }
 
     // MARK: - Flood Fill
@@ -468,6 +500,25 @@ class CanvasViewModel: ObservableObject {
 
         saveUndoState()
         updateCurrentCanvas(imported)
+        applyCurrentTemplate()
+    }
+
+    // MARK: - Tile-Seamless Check
+
+    func runTileCheck() {
+        tileCheckResult = currentCanvas.checkTileSeamless()
+    }
+
+    func clearTileCheck() {
+        tileCheckResult = nil
+    }
+
+    // MARK: - Palette Reduce
+
+    func reduceToPalette(_ palette: [Color], dithering: Bool = false) {
+        saveUndoState()
+        let reduced = currentCanvas.reducedToPalette(palette, dithering: dithering)
+        updateCurrentCanvas(reduced)
         applyCurrentTemplate()
     }
 }

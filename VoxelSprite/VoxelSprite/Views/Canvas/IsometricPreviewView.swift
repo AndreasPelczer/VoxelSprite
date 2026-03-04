@@ -36,6 +36,7 @@ struct IsometricPreviewView: View {
     @EnvironmentObject var blockVM: BlockViewModel
 
     @State private var previewAngle: PreviewAngle = .iso
+    @State private var minecraftLighting: Bool = false
 
     /// Electric Teal
     private let teal = Color(red: 0.0, green: 0.85, blue: 0.85)
@@ -43,9 +44,14 @@ struct IsometricPreviewView: View {
     /// Vorschau-Größe
     private let previewSize: CGFloat = 180
 
+    /// Minecraft-Lichtmultiplikatoren
+    private let lightTop: Double = 1.0
+    private let lightSide: Double = 0.85
+    private let lightBottom: Double = 0.70
+
     var body: some View {
         VStack(spacing: 8) {
-            // Angle Selector
+            // Angle Selector + Lighting Toggle
             HStack(spacing: 4) {
                 ForEach(PreviewAngle.allCases) { angle in
                     Button {
@@ -65,22 +71,46 @@ struct IsometricPreviewView: View {
                     .buttonStyle(.plain)
                     .help(angle.rawValue)
                 }
+
+                Spacer().frame(width: 4)
+
+                // Minecraft Lighting Toggle
+                Button {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        minecraftLighting.toggle()
+                    }
+                } label: {
+                    Image(systemName: minecraftLighting ? "sun.max.fill" : "sun.max")
+                        .font(.system(size: 10, weight: .medium))
+                        .frame(width: 28, height: 22)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(minecraftLighting ? teal.opacity(0.2) : Color.clear)
+                        )
+                        .foregroundStyle(minecraftLighting ? teal : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Minecraft Lighting")
             }
 
             // 3D Preview Canvas
             Canvas { context, size in
                 let project = blockVM.project
                 let gs = project.gridSize
+                let useLighting = minecraftLighting
 
                 switch previewAngle {
                 case .iso:
-                    drawIsometric(context: context, size: size, project: project, gridSize: gs)
+                    drawIsometric(context: context, size: size, project: project, gridSize: gs, lighting: useLighting)
                 case .front:
-                    drawFlatFace(context: context, size: size, canvas: project.canvas(for: .north), gridSize: gs)
+                    drawFlatFace(context: context, size: size, canvas: project.canvas(for: .north), gridSize: gs,
+                                 lightMultiplier: useLighting ? lightSide : 1.0)
                 case .back:
-                    drawFlatFace(context: context, size: size, canvas: project.canvas(for: .south), gridSize: gs)
+                    drawFlatFace(context: context, size: size, canvas: project.canvas(for: .south), gridSize: gs,
+                                 lightMultiplier: useLighting ? lightSide : 1.0)
                 case .topDown:
-                    drawFlatFace(context: context, size: size, canvas: project.canvas(for: .top), gridSize: gs)
+                    drawFlatFace(context: context, size: size, canvas: project.canvas(for: .top), gridSize: gs,
+                                 lightMultiplier: useLighting ? lightTop : 1.0)
                 }
             }
             .frame(width: previewSize, height: previewSize)
@@ -97,7 +127,7 @@ struct IsometricPreviewView: View {
 
     /// Zeichnet den Würfel in isometrischer Ansicht.
     /// Zeigt 3 sichtbare Faces: Top, Nord (Vorderseite), Ost (rechte Seite).
-    private func drawIsometric(context: GraphicsContext, size: CGSize, project: BlockProject, gridSize: Int) {
+    private func drawIsometric(context: GraphicsContext, size: CGSize, project: BlockProject, gridSize: Int, lighting: Bool = false) {
         let topCanvas = project.canvas(for: .top)
         let frontCanvas = project.canvas(for: .north)
         let rightCanvas = project.canvas(for: .east)
@@ -115,6 +145,7 @@ struct IsometricPreviewView: View {
         let pixelH = quarterH / CGFloat(gridSize)
 
         // Top Face (Raute oben)
+        let topDarken = lighting ? (1.0 - lightTop) : 0.0
         for y in 0..<gridSize {
             for x in 0..<gridSize {
                 if let color = topCanvas.pixel(at: x, y: y) {
@@ -128,17 +159,18 @@ struct IsometricPreviewView: View {
                     path.addLine(to: CGPoint(x: isoX - pixelW / 2, y: isoY + pixelH / 2))
                     path.closeSubpath()
 
-                    context.fill(path, with: .color(color))
+                    let drawColor = topDarken > 0 ? darken(color, by: topDarken) : color
+                    context.fill(path, with: .color(drawColor))
                 }
             }
         }
 
         // Front Face (links unten) — North
+        let frontDarken = lighting ? (1.0 - lightSide) : 0.15
         for y in 0..<gridSize {
             for x in 0..<gridSize {
                 if let color = frontCanvas.pixel(at: x, y: y) {
-                    // Leicht abgedunkelt für 3D-Effekt
-                    let darkened = darken(color, by: 0.15)
+                    let darkened = darken(color, by: frontDarken)
 
                     let baseX = centerX - halfW + CGFloat(x) * (pixelW / 2)
                     let baseY = centerY + CGFloat(x) * (pixelH / 2) - quarterH + CGFloat(y) * (quarterH * 2 / CGFloat(gridSize))
@@ -156,11 +188,11 @@ struct IsometricPreviewView: View {
         }
 
         // Right Face (rechts unten) — East
+        let rightDarken = lighting ? (1.0 - lightBottom) : 0.30
         for y in 0..<gridSize {
             for x in 0..<gridSize {
                 if let color = rightCanvas.pixel(at: x, y: y) {
-                    // Stärker abgedunkelt
-                    let darkened = darken(color, by: 0.30)
+                    let darkened = darken(color, by: rightDarken)
 
                     let baseX = centerX + CGFloat(x) * (pixelW / 2)
                     let baseY = centerY + quarterH - CGFloat(x) * (pixelH / 2) - quarterH + CGFloat(y) * (quarterH * 2 / CGFloat(gridSize))
@@ -194,7 +226,7 @@ struct IsometricPreviewView: View {
     // MARK: - Flat Face View
 
     /// Zeichnet ein einzelnes Face als flache 2D-Vorschau
-    private func drawFlatFace(context: GraphicsContext, size: CGSize, canvas: PixelCanvas, gridSize: Int) {
+    private func drawFlatFace(context: GraphicsContext, size: CGSize, canvas: PixelCanvas, gridSize: Int, lightMultiplier: Double = 1.0) {
         let padding: CGFloat = 10
         let availableSize = min(size.width, size.height) - padding * 2
         let cellSize = availableSize / CGFloat(gridSize)
@@ -217,7 +249,8 @@ struct IsometricPreviewView: View {
                 context.fill(Path(rect), with: .color(bgColor))
 
                 if let color = canvas.pixel(at: x, y: y) {
-                    context.fill(Path(rect), with: .color(color))
+                    let drawColor = lightMultiplier < 1.0 ? darken(color, by: 1.0 - lightMultiplier) : color
+                    context.fill(Path(rect), with: .color(drawColor))
                 }
             }
         }
