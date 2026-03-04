@@ -40,19 +40,21 @@ class CanvasViewModel: ObservableObject {
     // MARK: - Werkzeuge
 
     enum Tool: String, CaseIterable {
-        case pen       = "Stift"
-        case eraser    = "Radierer"
-        case fill      = "Füllen"
-        case line      = "Linie"
-        case rectangle = "Rechteck"
+        case pen        = "Stift"
+        case eraser     = "Radierer"
+        case fill       = "Füllen"
+        case line       = "Linie"
+        case rectangle  = "Rechteck"
+        case eyedropper = "Pipette"
 
         var iconName: String {
             switch self {
-            case .pen:       return "pencil"
-            case .eraser:    return "eraser"
-            case .fill:      return "drop.fill"
-            case .line:      return "line.diagonal"
-            case .rectangle: return "rectangle"
+            case .pen:        return "pencil"
+            case .eraser:     return "eraser"
+            case .fill:       return "drop.fill"
+            case .line:       return "line.diagonal"
+            case .rectangle:  return "rectangle"
+            case .eyedropper: return "eyedropper"
             }
         }
     }
@@ -288,6 +290,12 @@ class CanvasViewModel: ObservableObject {
             canvas.setPixel(at: x, y: y, color: nil)
         case .fill:
             floodFill(canvas: &canvas, x: x, y: y, newColor: currentColor)
+        case .eyedropper:
+            if let color = canvas.pixel(at: x, y: y) {
+                currentColor = color
+                currentTool = .pen
+            }
+            return
         case .line, .rectangle:
             break
         }
@@ -418,5 +426,48 @@ class CanvasViewModel: ObservableObject {
         var canvas = currentCanvas
         canvas.clear()
         updateCurrentCanvas(canvas)
+    }
+
+    // MARK: - Canvas-Transformationen
+
+    func mirrorHorizontal() {
+        saveUndoState()
+        let mirrored = currentCanvas.mirroredHorizontal()
+        updateCurrentCanvas(mirrored)
+        applyCurrentTemplate()
+    }
+
+    func mirrorVertical() {
+        saveUndoState()
+        let mirrored = currentCanvas.mirroredVertical()
+        updateCurrentCanvas(mirrored)
+        applyCurrentTemplate()
+    }
+
+    func rotateCW() {
+        saveUndoState()
+        let canvas = currentCanvas
+        // Nur rotieren wenn Canvas quadratisch ist (sonst passen Dimensionen nicht)
+        guard canvas.width == canvas.height else { return }
+        let rotated = canvas.rotatedCW()
+        updateCurrentCanvas(rotated)
+        applyCurrentTemplate()
+    }
+
+    // MARK: - PNG Import
+
+    /// Importiert ein CGImage in das aktuelle Canvas.
+    /// Skaliert auf die aktuelle Canvas-Größe.
+    func importImage(_ cgImage: CGImage) {
+        let canvas = currentCanvas
+        guard let imported = PixelCanvas.fromCGImage(
+            cgImage,
+            targetWidth: canvas.width,
+            targetHeight: canvas.height
+        ) else { return }
+
+        saveUndoState()
+        updateCurrentCanvas(imported)
+        applyCurrentTemplate()
     }
 }
