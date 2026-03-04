@@ -75,6 +75,9 @@ struct PixelCanvasView: View {
         // Tile Check
         let tileCheckResult = canvasVM.tileCheckResult
 
+        // Selection
+        let selection = canvasVM.selection
+
         Canvas { context, _ in
 
             // 1. Schachbrett-Hintergrund
@@ -98,7 +101,12 @@ struct PixelCanvasView: View {
                 drawTileCheckIndicators(context: context, result: result, width: cw, height: ch, cellSize: cs)
             }
 
-            // 6. Hover-Highlight
+            // 6. Selection-Visualisierung
+            if let sel = selection {
+                drawSelection(context: context, selection: sel, cellSize: cs)
+            }
+
+            // 7. Hover-Highlight
             if let hover = hover {
                 drawHoverIndicator(context: context, x: hover.x, y: hover.y, isPen: isPenTool, color: currentColor, cellSize: cs)
             }
@@ -244,6 +252,45 @@ struct PixelCanvasView: View {
             hPath.addLine(to: CGPoint(x: CGFloat(width) * cellSize, y: pos))
             context.stroke(hPath, with: .color(lineColor), lineWidth: 0.5)
         }
+    }
+
+    /// Zeichnet die Auswahl (gestrichelte Umrandung + floating Pixel)
+    private func drawSelection(context: GraphicsContext, selection: CanvasViewModel.Selection, cellSize: CGFloat) {
+        let sel = selection
+        let x = CGFloat(sel.x) * cellSize
+        let y = CGFloat(sel.y) * cellSize
+        let w = CGFloat(sel.width) * cellSize
+        let h = CGFloat(sel.height) * cellSize
+        let selRect = CGRect(x: x, y: y, width: w, height: h)
+
+        // Floating Selection: Pixel zeichnen
+        if sel.isFloating {
+            for sy in 0..<sel.height {
+                for sx in 0..<sel.width {
+                    if let color = sel.pixels[sy][sx] {
+                        let pxRect = CGRect(
+                            x: CGFloat(sel.x + sx) * cellSize,
+                            y: CGFloat(sel.y + sy) * cellSize,
+                            width: cellSize, height: cellSize
+                        )
+                        context.fill(Path(pxRect), with: .color(color))
+                    }
+                }
+            }
+        }
+
+        // Gestrichelte Umrandung (Marching Ants Effekt)
+        let dashPattern: [CGFloat] = [4, 4]
+        context.stroke(
+            Path(selRect),
+            with: .color(.white),
+            style: StrokeStyle(lineWidth: 1.5, dash: dashPattern)
+        )
+        context.stroke(
+            Path(selRect),
+            with: .color(.black),
+            style: StrokeStyle(lineWidth: 1.5, dash: dashPattern, dashPhase: 4)
+        )
     }
 
     /// Zeichnet rote/grüne Markierungen an den Kanten für Tile-Seamless-Prüfung

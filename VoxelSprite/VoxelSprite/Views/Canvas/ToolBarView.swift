@@ -21,8 +21,21 @@ struct ToolBarView: View {
     @EnvironmentObject var canvasVM: CanvasViewModel
 
     @State private var showImportPicker = false
+    @State private var showImportOptions = false
+    @State private var importMode: ImportMode = .replace
+    @State private var importScaling: ImportScaling = .nearestNeighbor
     @State private var showPaletteReduce = false
     @State private var paletteReduceDithering = false
+
+    enum ImportMode: String, CaseIterable {
+        case replace = "Ersetzen"
+        case overlay = "Als Overlay"
+    }
+
+    enum ImportScaling: String, CaseIterable {
+        case nearestNeighbor = "Nearest Neighbor"
+        case bilinear = "Bilinear"
+    }
 
     /// Electric Teal Akzentfarbe
     private let teal = Color(red: 0.0, green: 0.85, blue: 0.85)
@@ -37,6 +50,34 @@ struct ToolBarView: View {
             }
 
             divider
+
+            // MARK: - Selection Actions (nur sichtbar wenn Selection aktiv)
+
+            if canvasVM.selection != nil {
+                actionButton(icon: "scissors", label: "Ausschneiden (Selection ausheben)", enabled: true) {
+                    canvasVM.liftSelection()
+                }
+                actionButton(icon: "doc.on.doc", label: "Kopieren (Selection kopieren)", enabled: true) {
+                    canvasVM.copySelection()
+                }
+                actionButton(icon: "arrow.left.and.right.righttriangle.left.righttriangle.right", label: "Selection H-Spiegeln", enabled: true) {
+                    canvasVM.mirrorSelectionH()
+                }
+                actionButton(icon: "arrow.up.and.down.righttriangle.up.righttriangle.down", label: "Selection V-Spiegeln", enabled: true) {
+                    canvasVM.mirrorSelectionV()
+                }
+                actionButton(icon: "rotate.right", label: "Selection 90° drehen", enabled: canvasVM.selection?.width == canvasVM.selection?.height) {
+                    canvasVM.rotateSelectionCW()
+                }
+                actionButton(icon: "trash", label: "Selection löschen", enabled: true, destructive: true) {
+                    canvasVM.deleteSelection()
+                }
+                actionButton(icon: "checkmark", label: "Selection anwenden", enabled: canvasVM.selection?.isFloating == true) {
+                    canvasVM.commitSelection()
+                }
+
+                divider
+            }
 
             // MARK: - Transformationen
 
@@ -170,6 +211,20 @@ struct ToolBarView: View {
                 showImportPicker = true
             }
 
+            // Import-Optionen Zahnrad
+            Button {
+                showImportOptions.toggle()
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 9, weight: .medium))
+                    .frame(width: 18, height: 18)
+            }
+            .buttonStyle(.plain)
+            .help("Import-Optionen")
+            .popover(isPresented: $showImportOptions) {
+                importOptionsPopover
+            }
+
             divider
 
             // MARK: - Canvas leeren
@@ -213,15 +268,58 @@ struct ToolBarView: View {
 
         guard let data = try? Data(contentsOf: url) else { return }
 
+        let useNearest = importScaling == .nearestNeighbor
+        let asOverlay = importMode == .overlay
+
         #if canImport(AppKit)
         guard let nsImage = NSImage(data: data),
               let cgImage = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
-        canvasVM.importImage(cgImage)
+        canvasVM.importImage(cgImage, nearestNeighbor: useNearest, asOverlay: asOverlay)
         #elseif canImport(UIKit)
         guard let uiImage = UIImage(data: data),
               let cgImage = uiImage.cgImage else { return }
-        canvasVM.importImage(cgImage)
+        canvasVM.importImage(cgImage, nearestNeighbor: useNearest, asOverlay: asOverlay)
         #endif
+    }
+
+    // MARK: - Import Options Popover
+
+    private var importOptionsPopover: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Import-Optionen")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(teal)
+
+            Picker("Skalierung", selection: $importScaling) {
+                ForEach(ImportScaling.allCases, id: \.self) { mode in
+                    Text(mode.rawValue).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .controlSize(.small)
+
+            Text("Nearest Neighbor hält Pixel scharf.\nBilinear glättet beim Skalieren.")
+                .font(.system(size: 9))
+                .foregroundStyle(.secondary)
+
+            Divider()
+
+            Picker("Modus", selection: $importMode) {
+                ForEach(ImportMode.allCases, id: \.self) { mode in
+                    Text(mode.rawValue).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .controlSize(.small)
+
+            Text(importMode == .replace
+                 ? "Ersetzt das gesamte Canvas."
+                 : "Importiert nur nicht-transparente Pixel.")
+                .font(.system(size: 9))
+                .foregroundStyle(.secondary)
+        }
+        .padding(10)
+        .frame(width: 220)
     }
 
     // MARK: - Subviews
@@ -413,6 +511,7 @@ struct ToolBarView: View {
         case .line:       return "4"
         case .rectangle:  return "5"
         case .eyedropper: return "6"
+        case .select:     return "7"
         }
     }
 }

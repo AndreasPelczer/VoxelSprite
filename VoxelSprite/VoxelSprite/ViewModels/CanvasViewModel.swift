@@ -46,6 +46,7 @@ class CanvasViewModel: ObservableObject {
         case line       = "Linie"
         case rectangle  = "Rechteck"
         case eyedropper = "Pipette"
+        case select     = "Auswahl"
 
         var iconName: String {
             switch self {
@@ -55,7 +56,26 @@ class CanvasViewModel: ObservableObject {
             case .line:       return "line.diagonal"
             case .rectangle:  return "rectangle"
             case .eyedropper: return "eyedropper"
+            case .select:     return "rectangle.dashed"
             }
+        }
+    }
+
+    // MARK: - Selection
+
+    struct Selection {
+        var x: Int
+        var y: Int
+        var width: Int
+        var height: Int
+        var pixels: [[Color?]]  // Die selektierten Pixel (aus Canvas ausgeschnitten)
+        var isFloating: Bool = false  // True wenn Selection vom Canvas gelöst wurde (move/paste)
+
+        var maxX: Int { x + width - 1 }
+        var maxY: Int { y + height - 1 }
+
+        func contains(_ px: Int, _ py: Int) -> Bool {
+            px >= x && px <= maxX && py >= y && py <= maxY
         }
     }
 
@@ -86,6 +106,11 @@ class CanvasViewModel: ObservableObject {
 
     /// Toleranter Vergleich: ΔRGBA ≤ 2 statt exakt
     @Published var tileCheckTolerant: Bool = false
+
+    // MARK: - Selection State
+
+    @Published var selection: Selection?
+    @Published var selectionDragStart: (x: Int, y: Int)?
 
     // MARK: - Zoom
 
@@ -248,6 +273,19 @@ class CanvasViewModel: ObservableObject {
     // MARK: - Zeichenoperationen
 
     func beginStroke(at x: Int, y: Int) {
+        // Selection-Tool: eigene Logik
+        if currentTool == .select {
+            // Klick in bestehende floating Selection → Move starten
+            if let sel = selection, sel.isFloating, sel.contains(x, y) {
+                selectionDragStart = (x, y)
+                return
+            }
+            // Bestehende Selection committen bevor neue erstellt wird
+            commitSelection()
+            shapeStartPoint = (x, y)
+            return
+        }
+
         saveUndoState()
 
         switch currentTool {
@@ -260,6 +298,30 @@ class CanvasViewModel: ObservableObject {
     }
 
     func continueStroke(at x: Int, y: Int) {
+        if currentTool == .select {
+            // Floating Selection bewegen
+            if let sel = selection, sel.isFloating, let dragStart = selectionDragStart {
+                let dx = x - dragStart.x
+                let dy = y - dragStart.y
+                selection = Selection(
+                    x: sel.x + dx, y: sel.y + dy,
+                    width: sel.width, height: sel.height,
+                    pixels: sel.pixels, isFloating: true
+                )
+                selectionDragStart = (x, y)
+                return
+            }
+            // Neue Selection aufziehen
+            if let start = shapeStartPoint {
+                let minX = min(start.x, x), maxX = max(start.x, x)
+                let minY = min(start.y, y), maxY = max(start.y, y)
+                let w = maxX - minX + 1, h = maxY - minY + 1
+                selection = Selection(x: minX, y: minY, width: w, height: h,
+                                     pixels: Array(repeating: Array(repeating: nil, count: w), count: h))
+            }
+            return
+        }
+
         switch currentTool {
         case .line:
             guard let start = shapeStartPoint, var canvas = preShapeCanvas else { return }
@@ -277,6 +339,26 @@ class CanvasViewModel: ObservableObject {
     }
 
     func endStroke(at x: Int, y: Int) {
+        if currentTool == .select {
+            selectionDragStart = nil
+            // Finalize selection rect (nicht floating, noch nicht gelöst)
+            if let start = shapeStartPoint, selection?.isFloating != true {
+                let minX = min(start.x, x), maxX = max(start.x, x)
+                let minY = min(start.y, y), maxY = max(start.y, y)
+                let w = maxX - minX + 1, h = maxY - minY + 1
+                let canvas = currentCanvas
+                var pixels = Array(repeating: Array(repeating: nil as Color?, count: w), count: h)
+                for sy in 0..<h {
+                    for sx in 0..<w {
+                        pixels[sy][sx] = canvas.pixel(at: minX + sx, y: minY + sy)
+                    }
+                }
+                selection = Selection(x: minX, y: minY, width: w, height: h, pixels: pixels)
+            }
+            shapeStartPoint = nil
+            return
+        }
+
         switch currentTool {
         case .line:
             guard let start = shapeStartPoint, var canvas = preShapeCanvas else { return }
@@ -540,16 +622,31 @@ class CanvasViewModel: ObservableObject {
 
     /// Importiert ein CGImage in das aktuelle Canvas.
     /// Skaliert auf die aktuelle Canvas-Größe.
-    func importImage(_ cgImage: CGImage) {
+    func importImage(_ cgImage: CGImage, nearestNeighbor: Bool = true, asOverlay: Bool = false) {
         let canvas = currentCanvas
         guard let imported = PixelCanvas.fromCGImage(
             cgImage,
             targetWidth: canvas.width,
-            targetHeight: canvas.height
+            targetHeight: canvas.height,
+            nearestNeighbor: nearestNeighbor
         ) else { return }
 
         saveUndoState()
-        updateCurrentCanvas(imported)
+
+        if asOverlay {
+            // Overlay: nur nicht-transparente Pixel überschreiben
+            var merged = canvas
+            for y in 0..<imported.height {
+                for x in 0..<imported.width {
+                    if let color = imported.pixel(at: x, y: y) {
+                        merged.setPixel(at: x, y: y, color: color)
+                    }
+                }
+            }
+            updateCurrentCanvas(merged)
+        } else {
+            updateCurrentCanvas(imported)
+        }
         applyCurrentTemplate()
     }
 
@@ -570,5 +667,124 @@ class CanvasViewModel: ObservableObject {
         let reduced = currentCanvas.reducedToPalette(palette, dithering: dithering)
         updateCurrentCanvas(reduced)
         applyCurrentTemplate()
+    }
+
+    // MARK: - Selection Operationen
+
+    /// Selection-Inhalt "ausheben" (vom Canvas löschen, in floating Selection)
+    func liftSelection() {
+        guard var sel = selection, !sel.isFloating else { return }
+        saveUndoState()
+        var canvas = currentCanvas
+        // Pixel aus Canvas ausschneiden
+        for sy in 0..<sel.height {
+            for sx in 0..<sel.width {
+                let cx = sel.x + sx, cy = sel.y + sy
+                sel.pixels[sy][sx] = canvas.pixel(at: cx, y: cy)
+                canvas.setPixel(at: cx, y: cy, color: nil)
+            }
+        }
+        sel.isFloating = true
+        selection = sel
+        updateCurrentCanvas(canvas)
+    }
+
+    /// Floating Selection zurück auf Canvas schreiben
+    func commitSelection() {
+        guard let sel = selection, sel.isFloating else {
+            selection = nil
+            return
+        }
+        saveUndoState()
+        var canvas = currentCanvas
+        for sy in 0..<sel.height {
+            for sx in 0..<sel.width {
+                let cx = sel.x + sx, cy = sel.y + sy
+                if let color = sel.pixels[sy][sx], canvas.isValid(x: cx, y: cy) {
+                    canvas.setPixel(at: cx, y: cy, color: color)
+                }
+            }
+        }
+        selection = nil
+        updateCurrentCanvas(canvas)
+        applyCurrentTemplate()
+    }
+
+    /// Selection als floating Copy erstellen (original bleibt)
+    func copySelection() {
+        guard var sel = selection else { return }
+        let canvas = currentCanvas
+        for sy in 0..<sel.height {
+            for sx in 0..<sel.width {
+                sel.pixels[sy][sx] = canvas.pixel(at: sel.x + sx, y: sel.y + sy)
+            }
+        }
+        sel.isFloating = true
+        selection = sel
+    }
+
+    /// Selection löschen (floating: verwerfen, nicht-floating: Pixel im Bereich löschen)
+    func deleteSelection() {
+        guard let sel = selection else { return }
+        if sel.isFloating {
+            // Floating: einfach verwerfen
+            selection = nil
+            return
+        }
+        // Nicht-floating: Pixel im Bereich löschen
+        saveUndoState()
+        var canvas = currentCanvas
+        for sy in 0..<sel.height {
+            for sx in 0..<sel.width {
+                canvas.setPixel(at: sel.x + sx, y: sel.y + sy, color: nil)
+            }
+        }
+        selection = nil
+        updateCurrentCanvas(canvas)
+        applyCurrentTemplate()
+    }
+
+    /// Floating Selection horizontal spiegeln
+    func mirrorSelectionH() {
+        guard var sel = selection else { return }
+        if !sel.isFloating { liftSelection(); sel = selection! }
+        var newPixels = sel.pixels
+        for y in 0..<sel.height {
+            newPixels[y] = sel.pixels[y].reversed()
+        }
+        selection = Selection(x: sel.x, y: sel.y, width: sel.width, height: sel.height,
+                             pixels: newPixels, isFloating: true)
+    }
+
+    /// Floating Selection vertikal spiegeln
+    func mirrorSelectionV() {
+        guard var sel = selection else { return }
+        if !sel.isFloating { liftSelection(); sel = selection! }
+        selection = Selection(x: sel.x, y: sel.y, width: sel.width, height: sel.height,
+                             pixels: sel.pixels.reversed(), isFloating: true)
+    }
+
+    /// Floating Selection 90° CW rotieren (nur quadratisch)
+    func rotateSelectionCW() {
+        guard var sel = selection, sel.width == sel.height else { return }
+        if !sel.isFloating { liftSelection(); sel = selection! }
+        let size = sel.width
+        var newPixels = Array(repeating: Array(repeating: nil as Color?, count: size), count: size)
+        for y in 0..<size {
+            for x in 0..<size {
+                newPixels[x][size - 1 - y] = sel.pixels[y][x]
+            }
+        }
+        selection = Selection(x: sel.x, y: sel.y, width: size, height: size,
+                             pixels: newPixels, isFloating: true)
+    }
+
+    /// Selection aufheben (ohne committen)
+    func clearSelection() {
+        if selection?.isFloating == true {
+            commitSelection()
+        } else {
+            selection = nil
+        }
     }
 }
