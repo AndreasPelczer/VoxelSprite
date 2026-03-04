@@ -1118,6 +1118,56 @@ class ExportViewModel: ObservableObject {
             }
         }
 
+        // Entities
+        for entity in project.entities {
+            let texturesDir = packDir.appendingPathComponent("assets/\(ns)/textures/entity")
+            try fm.createDirectory(at: texturesDir, withIntermediateDirectories: true)
+
+            guard let cgImage = renderCanvasToFullCGImage(entity.texture) else {
+                throw ExportError.frameRenderFailed
+            }
+            guard let pngData = cgImageToPNGData(cgImage) else {
+                throw ExportError.pngEncodingFailed
+            }
+            try pngData.write(to: texturesDir.appendingPathComponent("\(entity.name).png"), options: .atomic)
+
+            currentStep += 1
+            let progress = Double(currentStep) / Double(totalSteps)
+            DispatchQueue.main.async { [weak self] in
+                self?.exportProgress = progress * 0.9
+                self?.exportStatus = "Entity: \(entity.name)…"
+            }
+        }
+
+        // Armors
+        for armor in project.armors {
+            let texturesDir = packDir.appendingPathComponent("assets/\(ns)/textures/models/armor")
+            try fm.createDirectory(at: texturesDir, withIntermediateDirectories: true)
+
+            guard let cgImage1 = renderCanvasToFullCGImage(armor.layer1) else {
+                throw ExportError.frameRenderFailed
+            }
+            guard let pngData1 = cgImageToPNGData(cgImage1) else {
+                throw ExportError.pngEncodingFailed
+            }
+            try pngData1.write(to: texturesDir.appendingPathComponent("\(armor.name)_layer_1.png"), options: .atomic)
+
+            guard let cgImage2 = renderCanvasToFullCGImage(armor.layer2) else {
+                throw ExportError.frameRenderFailed
+            }
+            guard let pngData2 = cgImageToPNGData(cgImage2) else {
+                throw ExportError.pngEncodingFailed
+            }
+            try pngData2.write(to: texturesDir.appendingPathComponent("\(armor.name)_layer_2.png"), options: .atomic)
+
+            currentStep += 1
+            let progress = Double(currentStep) / Double(totalSteps)
+            DispatchQueue.main.async { [weak self] in
+                self?.exportProgress = progress * 0.9
+                self?.exportStatus = "Armor: \(armor.name)…"
+            }
+        }
+
         // pack.mcmeta
         let packFormat: Int
         switch project.targetVersion {
@@ -1233,6 +1283,170 @@ class ExportViewModel: ObservableObject {
             "pack": [
                 "pack_format": 26,
                 "description": "VoxelSprite Datapack: \(project.name)"
+            ]
+        ]
+        let packMetaData = try JSONSerialization.data(withJSONObject: packMeta, options: .prettyPrinted)
+        try packMetaData.write(to: packDir.appendingPathComponent("pack.mcmeta"), options: .atomic)
+
+        return packDir
+    }
+
+    // MARK: - Entity Resourcepack Export
+
+    /// Exportiert eine Entity-Textur als Resourcepack
+    func exportEntityResourcepack(entityVM: EntityViewModel) {
+        isExporting = true
+        errorMessage = nil
+        exportProgress = 0
+        exportStatus = "Entity-Resourcepack wird erstellt…"
+
+        let snapshot = entityVM.project
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+
+            do {
+                let url = try self.createEntityResourcepack(project: snapshot)
+
+                DispatchQueue.main.async {
+                    self.exportProgress = 1.0
+                    self.exportStatus = "Fertig!"
+                    self.exportedFileURL = url
+                    self.showShareSheet = true
+                    self.isExporting = false
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.errorMessage = "Entity-Export fehlgeschlagen: \(error.localizedDescription)"
+                    self.isExporting = false
+                }
+            }
+        }
+    }
+
+    private func createEntityResourcepack(project: EntityProject) throws -> URL {
+        let fm = FileManager.default
+        let baseName = uniqueFileName(base: project.name, ext: "")
+        let packDir = fm.temporaryDirectory.appendingPathComponent("resourcepack_entity_\(baseName)")
+
+        // Ordnerstruktur: assets/{namespace}/textures/entity/{name}.png
+        let texturesDir = packDir
+            .appendingPathComponent("assets/\(project.namespace)/textures/entity")
+        try fm.createDirectory(at: texturesDir, withIntermediateDirectories: true)
+
+        DispatchQueue.main.async { [weak self] in
+            self?.exportProgress = 0.3
+            self?.exportStatus = "Textur…"
+        }
+
+        // Entity-Textur exportieren
+        guard let cgImage = renderCanvasToFullCGImage(project.texture) else {
+            throw ExportError.frameRenderFailed
+        }
+        guard let pngData = cgImageToPNGData(cgImage) else {
+            throw ExportError.pngEncodingFailed
+        }
+        try pngData.write(to: texturesDir.appendingPathComponent("\(project.name).png"), options: .atomic)
+
+        DispatchQueue.main.async { [weak self] in
+            self?.exportProgress = 0.8
+            self?.exportStatus = "pack.mcmeta…"
+        }
+
+        // pack.mcmeta
+        let packMeta: [String: Any] = [
+            "pack": [
+                "pack_format": 15,
+                "description": "VoxelSprite Entity: \(project.name) (\(project.entityType.rawValue))"
+            ]
+        ]
+        let packMetaData = try JSONSerialization.data(withJSONObject: packMeta, options: .prettyPrinted)
+        try packMetaData.write(to: packDir.appendingPathComponent("pack.mcmeta"), options: .atomic)
+
+        return packDir
+    }
+
+    // MARK: - Armor Resourcepack Export
+
+    /// Exportiert eine Rüstungstextur als Resourcepack
+    func exportArmorResourcepack(armorVM: ArmorViewModel) {
+        isExporting = true
+        errorMessage = nil
+        exportProgress = 0
+        exportStatus = "Armor-Resourcepack wird erstellt…"
+
+        let snapshot = armorVM.project
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+
+            do {
+                let url = try self.createArmorResourcepack(project: snapshot)
+
+                DispatchQueue.main.async {
+                    self.exportProgress = 1.0
+                    self.exportStatus = "Fertig!"
+                    self.exportedFileURL = url
+                    self.showShareSheet = true
+                    self.isExporting = false
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.errorMessage = "Armor-Export fehlgeschlagen: \(error.localizedDescription)"
+                    self.isExporting = false
+                }
+            }
+        }
+    }
+
+    private func createArmorResourcepack(project: ArmorProject) throws -> URL {
+        let fm = FileManager.default
+        let baseName = uniqueFileName(base: project.name, ext: "")
+        let packDir = fm.temporaryDirectory.appendingPathComponent("resourcepack_armor_\(baseName)")
+
+        // Ordnerstruktur: assets/{namespace}/textures/models/armor/
+        let texturesDir = packDir
+            .appendingPathComponent("assets/\(project.namespace)/textures/models/armor")
+        try fm.createDirectory(at: texturesDir, withIntermediateDirectories: true)
+
+        DispatchQueue.main.async { [weak self] in
+            self?.exportProgress = 0.2
+            self?.exportStatus = "Layer 1…"
+        }
+
+        // Layer 1 exportieren
+        guard let cgImage1 = renderCanvasToFullCGImage(project.layer1) else {
+            throw ExportError.frameRenderFailed
+        }
+        guard let pngData1 = cgImageToPNGData(cgImage1) else {
+            throw ExportError.pngEncodingFailed
+        }
+        try pngData1.write(to: texturesDir.appendingPathComponent("\(project.name)_layer_1.png"), options: .atomic)
+
+        DispatchQueue.main.async { [weak self] in
+            self?.exportProgress = 0.5
+            self?.exportStatus = "Layer 2…"
+        }
+
+        // Layer 2 exportieren
+        guard let cgImage2 = renderCanvasToFullCGImage(project.layer2) else {
+            throw ExportError.frameRenderFailed
+        }
+        guard let pngData2 = cgImageToPNGData(cgImage2) else {
+            throw ExportError.pngEncodingFailed
+        }
+        try pngData2.write(to: texturesDir.appendingPathComponent("\(project.name)_layer_2.png"), options: .atomic)
+
+        DispatchQueue.main.async { [weak self] in
+            self?.exportProgress = 0.8
+            self?.exportStatus = "pack.mcmeta…"
+        }
+
+        // pack.mcmeta
+        let packMeta: [String: Any] = [
+            "pack": [
+                "pack_format": 15,
+                "description": "VoxelSprite Armor: \(project.name) (\(project.material.rawValue))"
             ]
         ]
         let packMetaData = try JSONSerialization.data(withJSONObject: packMeta, options: .prettyPrinted)
