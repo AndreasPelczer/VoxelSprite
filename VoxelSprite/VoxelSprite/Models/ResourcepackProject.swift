@@ -21,6 +21,8 @@ struct AssetEntry: Identifiable {
         case block    = "Block"
         case item     = "Item"
         case painting = "Painting"
+        case entity   = "Entity"
+        case armor    = "Armor"
 
         var id: String { rawValue }
 
@@ -29,6 +31,8 @@ struct AssetEntry: Identifiable {
             case .block:    return "cube"
             case .item:     return "shield"
             case .painting: return "photo.artframe"
+            case .entity:   return "hare"
+            case .armor:    return "shield.lefthalf.filled"
             }
         }
     }
@@ -59,6 +63,12 @@ struct ResourcepackProject {
     /// Crafting Recipes
     var recipes: [CraftingRecipe]
 
+    /// Entity-Projekte
+    var entities: [EntityProject]
+
+    /// Armor-Projekte
+    var armors: [ArmorProject]
+
     // MARK: - Init
 
     init(
@@ -73,13 +83,15 @@ struct ResourcepackProject {
         self.items = []
         self.paintings = []
         self.recipes = []
+        self.entities = []
+        self.armors = []
     }
 
     // MARK: - Asset-Verwaltung
 
     /// Gesamtanzahl aller Assets
     var totalAssetCount: Int {
-        blocks.count + items.count + paintings.count
+        blocks.count + items.count + paintings.count + entities.count + armors.count
     }
 
     /// Alle Assets als flache Liste
@@ -93,6 +105,12 @@ struct ResourcepackProject {
         }
         for painting in paintings {
             result.append(AssetEntry(type: .painting, name: painting.name))
+        }
+        for entity in entities {
+            result.append(AssetEntry(type: .entity, name: entity.name))
+        }
+        for armor in armors {
+            result.append(AssetEntry(type: .armor, name: armor.name))
         }
         return result
     }
@@ -147,5 +165,31 @@ struct ResourcepackProject {
     mutating func removeRecipe(at index: Int) {
         guard index >= 0, index < recipes.count else { return }
         recipes.remove(at: index)
+    }
+
+    // MARK: - Entity-Operationen
+
+    mutating func addEntity(_ name: String = "new_entity") {
+        var entity = EntityProject(name: name, namespace: namespace)
+        entity.name = name
+        entities.append(entity)
+    }
+
+    mutating func removeEntity(at index: Int) {
+        guard index >= 0, index < entities.count else { return }
+        entities.remove(at: index)
+    }
+
+    // MARK: - Armor-Operationen
+
+    mutating func addArmor(_ name: String = "new_armor") {
+        var armor = ArmorProject(name: name, namespace: namespace)
+        armor.name = name
+        armors.append(armor)
+    }
+
+    mutating func removeArmor(at index: Int) {
+        guard index >= 0, index < armors.count else { return }
+        armors.remove(at: index)
     }
 }

@@ -19,6 +19,8 @@ class CanvasViewModel: ObservableObject {
         case skin     = "Steve"
         case painting = "Painting"
         case recipe   = "Rezept"
+        case entity   = "Entity"
+        case armor    = "Armor"
 
         var id: String { rawValue }
 
@@ -29,6 +31,8 @@ class CanvasViewModel: ObservableObject {
             case .skin:     return "figure.stand"
             case .painting: return "photo.artframe"
             case .recipe:   return "square.grid.3x3"
+            case .entity:   return "hare"
+            case .armor:    return "shield.lefthalf.filled"
             }
         }
     }
@@ -91,6 +95,8 @@ class CanvasViewModel: ObservableObject {
     private weak var itemViewModel: ItemViewModel?
     private weak var skinViewModel: SkinViewModel?
     private weak var paintingViewModel: PaintingViewModel?
+    private weak var entityViewModel: EntityViewModel?
+    private weak var armorViewModel: ArmorViewModel?
 
     // MARK: - Init
 
@@ -112,6 +118,14 @@ class CanvasViewModel: ObservableObject {
         self.paintingViewModel = paintingViewModel
     }
 
+    func connect(to entityViewModel: EntityViewModel) {
+        self.entityViewModel = entityViewModel
+    }
+
+    func connect(to armorViewModel: ArmorViewModel) {
+        self.armorViewModel = armorViewModel
+    }
+
     // MARK: - Aktuelles Canvas (modus-abhängig)
 
     var currentCanvas: PixelCanvas {
@@ -126,6 +140,10 @@ class CanvasViewModel: ObservableObject {
             return paintingViewModel?.activeCanvas ?? PixelCanvas(width: 32, height: 32)
         case .recipe:
             return PixelCanvas(gridSize: 16) // Recipe-Modus hat kein Canvas
+        case .entity:
+            return entityViewModel?.activeCanvas ?? PixelCanvas(width: 8, height: 8)
+        case .armor:
+            return armorViewModel?.activeCanvas ?? PixelCanvas(width: 8, height: 8)
         }
     }
 
@@ -147,6 +165,10 @@ class CanvasViewModel: ObservableObject {
             paintingViewModel?.updateActiveCanvas(canvas)
         case .recipe:
             break
+        case .entity:
+            entityViewModel?.updateActiveCanvas(canvas)
+        case .armor:
+            armorViewModel?.updateActiveCanvas(canvas)
         }
     }
 
@@ -166,6 +188,12 @@ class CanvasViewModel: ObservableObject {
             paintingViewModel?.scheduleStrokeAutosave()
         case .recipe:
             break
+        case .entity:
+            entityViewModel?.applyTemplate()
+            entityViewModel?.scheduleStrokeAutosave()
+        case .armor:
+            armorViewModel?.applyTemplate()
+            armorViewModel?.scheduleStrokeAutosave()
         }
     }
 
@@ -197,7 +225,7 @@ class CanvasViewModel: ObservableObject {
             return itemViewModel?.overlayCanvas()
         case .skin:
             return skinViewModel?.overlayCanvas()
-        case .painting, .recipe:
+        case .painting, .recipe, .entity, .armor:
             return nil
         }
     }

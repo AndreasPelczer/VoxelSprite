@@ -29,6 +29,8 @@ struct ContentView: View {
     @EnvironmentObject var paintingVM: PaintingViewModel
     @EnvironmentObject var recipeVM: RecipeViewModel
     @EnvironmentObject var resourcepackVM: ResourcepackViewModel
+    @EnvironmentObject var entityVM: EntityViewModel
+    @EnvironmentObject var armorVM: ArmorViewModel
 
     @State private var showSaveDialog = false
     @State private var showOpenDialog = false
@@ -178,6 +180,10 @@ struct ContentView: View {
                         paintingSidebarContent
                     case .recipe:
                         recipeSidebarContent
+                    case .entity:
+                        entitySidebarContent
+                    case .armor:
+                        armorSidebarContent
                     }
 
                     Divider()
@@ -200,6 +206,10 @@ struct ContentView: View {
                         paintingExportCard
                     case .recipe:
                         recipeExportCard
+                    case .entity:
+                        entityExportCard
+                    case .armor:
+                        armorExportCard
                     }
 
                     Divider()
@@ -227,6 +237,12 @@ struct ContentView: View {
             // Zweite Reihe: Painting, Rezept
             HStack(spacing: 4) {
                 ForEach([CanvasViewModel.EditorMode.painting, .recipe], id: \.self) { mode in
+                    modeButton(mode)
+                }
+            }
+            // Dritte Reihe: Entity, Armor
+            HStack(spacing: 4) {
+                ForEach([CanvasViewModel.EditorMode.entity, .armor], id: \.self) { mode in
                     modeButton(mode)
                 }
             }
@@ -1235,6 +1251,451 @@ struct ContentView: View {
         )
     }
 
+    // MARK: - Entity Sidebar
+
+    @ViewBuilder
+    private var entitySidebarContent: some View {
+        sectionHeader("ENTITY")
+
+        // Entity-Name
+        HStack {
+            Text("Name:")
+                .font(.system(size: 11, weight: .medium))
+            TextField("entity_name", text: $entityVM.project.name)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 11, design: .monospaced))
+                .controlSize(.small)
+        }
+
+        // Entity-Typ
+        sectionHeader("MOB-TYP")
+
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 4), spacing: 4) {
+            ForEach(EntityType.allCases) { type in
+                Button {
+                    entityVM.changeEntityType(type)
+                    canvasVM.resetUndoHistory()
+                } label: {
+                    VStack(spacing: 2) {
+                        Image(systemName: type.iconName)
+                            .font(.system(size: 12))
+                        Text(type.rawValue)
+                            .font(.system(size: 8, weight: .bold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(entityVM.project.entityType == type ? accentTeal : nil)
+            }
+        }
+
+        // Textur-Info
+        HStack(spacing: 4) {
+            Image(systemName: "info.circle")
+                .font(.system(size: 9))
+            Text("\(entityVM.project.entityType.textureWidth)×\(entityVM.project.entityType.textureHeight) px")
+                .font(.system(size: 9, design: .monospaced))
+        }
+        .foregroundStyle(.tertiary)
+
+        Divider()
+
+        // Körperteil-Selector
+        sectionHeader("KÖRPERTEIL")
+
+        VStack(spacing: 3) {
+            ForEach(Array(entityVM.project.entityType.bodyParts.enumerated()), id: \.element.id) { index, part in
+                Button {
+                    canvasVM.resetUndoHistory()
+                    entityVM.selectPart(index)
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(part.name)
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        Spacer()
+                        Text("\(part.boxW)×\(part.boxH)×\(part.boxD)")
+                            .font(.system(size: 8, design: .monospaced))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(entityVM.activePartIndex == index ? accentTeal.opacity(0.15) : Color.clear)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 5)
+                            .stroke(entityVM.activePartIndex == index ? accentTeal.opacity(0.5) : .white.opacity(0.06), lineWidth: 1)
+                    )
+                    .foregroundStyle(entityVM.activePartIndex == index ? accentTeal : .secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+
+        Divider()
+
+        // Face-Selector
+        sectionHeader("FACE")
+
+        HStack(spacing: 4) {
+            ForEach(SkinFace.allCases) { face in
+                Button {
+                    canvasVM.resetUndoHistory()
+                    entityVM.selectFace(face)
+                } label: {
+                    Text(face.shortLabel)
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(entityVM.activeFace == face ? accentTeal : nil)
+            }
+        }
+
+        // Aktuelle Region-Info
+        let region = entityVM.activeBodyPart.region(for: entityVM.activeFace)
+        Text("UV: (\(region.x),\(region.y)) \(region.width)×\(region.height)")
+            .font(.system(size: 8, design: .monospaced))
+            .foregroundStyle(.tertiary)
+    }
+
+    // MARK: - Entity Export Card
+
+    private var entityExportCard: some View {
+        VStack(spacing: 10) {
+            sectionHeader("EXPORT")
+
+            // Namespace
+            HStack {
+                Text("Namespace:")
+                    .font(.system(size: 10, weight: .medium))
+                TextField("minecraft", text: $entityVM.project.namespace)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 10, design: .monospaced))
+                    .controlSize(.small)
+            }
+
+            // Transparenter Hintergrund
+            Toggle("Transparenter Hintergrund", isOn: $exportVM.transparentBackground)
+                .font(.system(size: 11))
+                .toggleStyle(.switch)
+                .controlSize(.small)
+
+            exportBadge(entityVM.project.entityType.rawValue, icon: entityVM.project.entityType.iconName, color: .mint)
+
+            // Export-Buttons
+            VStack(spacing: 6) {
+                Button {
+                    exportEntityPNG()
+                } label: {
+                    Label("Entity PNG", systemImage: "photo")
+                        .font(.system(size: 11, weight: .bold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .tint(accentTeal)
+
+                Button {
+                    exportVM.exportEntityResourcepack(entityVM: entityVM)
+                } label: {
+                    Label("Resourcepack", systemImage: "shippingbox")
+                        .font(.system(size: 11, weight: .bold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .tint(accentTeal.opacity(0.7))
+            }
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.white.opacity(0.04))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(accentTeal.opacity(0.15), lineWidth: 1)
+        )
+    }
+
+    private func exportEntityPNG() {
+        let canvas = entityVM.project.texture
+        guard let cgImage = canvas.toCGImage() else { return }
+
+        #if canImport(AppKit)
+        let rep = NSBitmapImageRep(cgImage: cgImage)
+        guard let pngData = rep.representation(using: .png, properties: [:]) else { return }
+        #elseif canImport(UIKit)
+        guard let pngData = UIImage(cgImage: cgImage).pngData() else { return }
+        #else
+        return
+        #endif
+
+        let fileName = "\(entityVM.project.name).png"
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+        try? pngData.write(to: url, options: .atomic)
+
+        exportVM.exportedFileURL = url
+        exportVM.showShareSheet = true
+    }
+
+    // MARK: - Armor Sidebar
+
+    @ViewBuilder
+    private var armorSidebarContent: some View {
+        sectionHeader("RÜSTUNG")
+
+        // Armor-Name
+        HStack {
+            Text("Name:")
+                .font(.system(size: 11, weight: .medium))
+            TextField("armor_name", text: $armorVM.project.name)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 11, design: .monospaced))
+                .controlSize(.small)
+        }
+
+        // Material-Selector
+        sectionHeader("MATERIAL")
+
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 3), spacing: 4) {
+            ForEach(ArmorMaterial.allCases) { material in
+                Button {
+                    armorVM.project.material = material
+                } label: {
+                    VStack(spacing: 2) {
+                        Image(systemName: material.iconName)
+                            .font(.system(size: 12))
+                        Text(material.rawValue)
+                            .font(.system(size: 8, weight: .bold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(armorVM.project.material == material ? accentTeal : nil)
+            }
+        }
+
+        Divider()
+
+        // Layer-Anzeige
+        HStack(spacing: 8) {
+            ForEach(ArmorLayer.allCases) { layer in
+                VStack(spacing: 2) {
+                    Image(systemName: layer.iconName)
+                        .font(.system(size: 11))
+                    Text(layer.rawValue)
+                        .font(.system(size: 8, weight: .bold))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(armorVM.activeLayer == layer ? accentTeal.opacity(0.15) : Color.clear)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 5)
+                        .stroke(armorVM.activeLayer == layer ? accentTeal.opacity(0.4) : .white.opacity(0.06), lineWidth: 1)
+                )
+                .foregroundStyle(armorVM.activeLayer == layer ? accentTeal : .secondary)
+            }
+        }
+
+        Text(armorVM.activeLayer.description)
+            .font(.system(size: 8, design: .monospaced))
+            .foregroundStyle(.tertiary)
+
+        Divider()
+
+        // Rüstungsteil-Selector
+        sectionHeader("RÜSTUNGSTEIL")
+
+        VStack(spacing: 3) {
+            ForEach(ArmorPiece.allCases) { piece in
+                Button {
+                    canvasVM.resetUndoHistory()
+                    armorVM.selectPiece(piece)
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: piece.iconName)
+                            .font(.system(size: 9))
+                        Text(piece.rawValue)
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        Spacer()
+                        Text(piece.armorLayer.rawValue)
+                            .font(.system(size: 7, design: .monospaced))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(armorVM.activePiece == piece ? accentTeal.opacity(0.15) : Color.clear)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 5)
+                            .stroke(armorVM.activePiece == piece ? accentTeal.opacity(0.5) : .white.opacity(0.06), lineWidth: 1)
+                    )
+                    .foregroundStyle(armorVM.activePiece == piece ? accentTeal : .secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+
+        Divider()
+
+        // Face-Selector
+        sectionHeader("FACE")
+
+        HStack(spacing: 4) {
+            ForEach(SkinFace.allCases) { face in
+                Button {
+                    canvasVM.resetUndoHistory()
+                    armorVM.selectFace(face)
+                } label: {
+                    Text(face.shortLabel)
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(armorVM.activeFace == face ? accentTeal : nil)
+            }
+        }
+
+        // Aktuelle Region-Info
+        let region = ArmorUVMap.region(piece: armorVM.activePiece, face: armorVM.activeFace)
+        Text("UV: (\(region.x),\(region.y)) \(region.width)×\(region.height)")
+            .font(.system(size: 8, design: .monospaced))
+            .foregroundStyle(.tertiary)
+    }
+
+    // MARK: - Armor Export Card
+
+    private var armorExportCard: some View {
+        VStack(spacing: 10) {
+            sectionHeader("EXPORT")
+
+            // Namespace
+            HStack {
+                Text("Namespace:")
+                    .font(.system(size: 10, weight: .medium))
+                TextField("minecraft", text: $armorVM.project.namespace)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 10, design: .monospaced))
+                    .controlSize(.small)
+            }
+
+            // Transparenter Hintergrund
+            Toggle("Transparenter Hintergrund", isOn: $exportVM.transparentBackground)
+                .font(.system(size: 11))
+                .toggleStyle(.switch)
+                .controlSize(.small)
+
+            exportBadge(armorVM.project.material.rawValue, icon: armorVM.project.material.iconName, color: .yellow)
+
+            // Info
+            HStack(spacing: 4) {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 9))
+                Text("Layer 1 + Layer 2 (je 64×32)")
+                    .font(.system(size: 9, design: .monospaced))
+            }
+            .foregroundStyle(.tertiary)
+
+            // Export-Buttons
+            VStack(spacing: 6) {
+                Button {
+                    exportArmorPNGs()
+                } label: {
+                    Label("Armor PNGs", systemImage: "photo.on.rectangle")
+                        .font(.system(size: 11, weight: .bold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .tint(accentTeal)
+
+                Button {
+                    exportVM.exportArmorResourcepack(armorVM: armorVM)
+                } label: {
+                    Label("Resourcepack", systemImage: "shippingbox")
+                        .font(.system(size: 11, weight: .bold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .tint(accentTeal.opacity(0.7))
+            }
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.white.opacity(0.04))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(accentTeal.opacity(0.15), lineWidth: 1)
+        )
+    }
+
+    private func exportArmorPNGs() {
+        var urls: [URL] = []
+
+        // Layer 1
+        let layer1 = armorVM.project.layer1
+        if let cgImage1 = layer1.toCGImage() {
+            #if canImport(AppKit)
+            let rep1 = NSBitmapImageRep(cgImage: cgImage1)
+            if let pngData = rep1.representation(using: .png, properties: [:]) {
+                let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(armorVM.project.name)_layer_1.png")
+                try? pngData.write(to: url, options: .atomic)
+                urls.append(url)
+            }
+            #elseif canImport(UIKit)
+            if let pngData = UIImage(cgImage: cgImage1).pngData() {
+                let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(armorVM.project.name)_layer_1.png")
+                try? pngData.write(to: url, options: .atomic)
+                urls.append(url)
+            }
+            #endif
+        }
+
+        // Layer 2
+        let layer2 = armorVM.project.layer2
+        if let cgImage2 = layer2.toCGImage() {
+            #if canImport(AppKit)
+            let rep2 = NSBitmapImageRep(cgImage: cgImage2)
+            if let pngData = rep2.representation(using: .png, properties: [:]) {
+                let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(armorVM.project.name)_layer_2.png")
+                try? pngData.write(to: url, options: .atomic)
+                urls.append(url)
+            }
+            #elseif canImport(UIKit)
+            if let pngData = UIImage(cgImage: cgImage2).pngData() {
+                let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(armorVM.project.name)_layer_2.png")
+                try? pngData.write(to: url, options: .atomic)
+                urls.append(url)
+            }
+            #endif
+        }
+
+        if let first = urls.first {
+            exportVM.exportedFileURL = first
+            exportVM.additionalExportURLs = Array(urls.dropFirst())
+            exportVM.showShareSheet = true
+        }
+    }
+
     // MARK: - Resourcepack Section (Multi-Asset)
 
     @ViewBuilder
@@ -1285,6 +1746,18 @@ struct ContentView: View {
             ForEach(0..<resourcepackVM.project.recipes.count, id: \.self) { i in
                 assetRow(icon: "square.grid.3x3", name: resourcepackVM.project.recipes[i].name, color: .orange) {
                     resourcepackVM.removeRecipe(at: i)
+                }
+            }
+            // Entities
+            ForEach(0..<resourcepackVM.project.entities.count, id: \.self) { i in
+                assetRow(icon: "hare", name: resourcepackVM.project.entities[i].name, color: .mint) {
+                    resourcepackVM.removeEntity(at: i)
+                }
+            }
+            // Armors
+            ForEach(0..<resourcepackVM.project.armors.count, id: \.self) { i in
+                assetRow(icon: "shield.lefthalf.filled", name: resourcepackVM.project.armors[i].name, color: .yellow) {
+                    resourcepackVM.removeArmor(at: i)
                 }
             }
         }
@@ -1338,6 +1811,32 @@ struct ContentView: View {
                 .buttonStyle(.bordered)
                 .controlSize(.mini)
                 .tint(.orange)
+            }
+        }
+
+        HStack(spacing: 4) {
+            if canvasVM.editorMode == .entity {
+                Button {
+                    resourcepackVM.importCurrentEntity(from: entityVM)
+                } label: {
+                    Label("Entity", systemImage: "plus")
+                        .font(.system(size: 9, weight: .bold))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+                .tint(.mint)
+            }
+
+            if canvasVM.editorMode == .armor {
+                Button {
+                    resourcepackVM.importCurrentArmor(from: armorVM)
+                } label: {
+                    Label("Armor", systemImage: "plus")
+                        .font(.system(size: 9, weight: .bold))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+                .tint(.yellow)
             }
         }
 

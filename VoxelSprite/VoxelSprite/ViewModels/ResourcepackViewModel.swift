@@ -27,6 +27,12 @@ class ResourcepackViewModel: ObservableObject {
     /// Aktuell bearbeitetes Rezept-Index (-1 = keiner)
     @Published var activeRecipeIndex: Int = -1
 
+    /// Aktuell bearbeiteter Entity-Index (-1 = keiner)
+    @Published var activeEntityIndex: Int = -1
+
+    /// Aktuell bearbeiteter Armor-Index (-1 = keiner)
+    @Published var activeArmorIndex: Int = -1
+
     // MARK: - Init
 
     init() {
@@ -53,6 +59,8 @@ class ResourcepackViewModel: ObservableObject {
         activeItemIndex = -1
         activePaintingIndex = -1
         activeRecipeIndex = -1
+        activeEntityIndex = -1
+        activeArmorIndex = -1
     }
 
     // MARK: - Item-Operationen
@@ -75,6 +83,8 @@ class ResourcepackViewModel: ObservableObject {
         activeItemIndex = index
         activePaintingIndex = -1
         activeRecipeIndex = -1
+        activeEntityIndex = -1
+        activeArmorIndex = -1
     }
 
     // MARK: - Painting-Operationen
@@ -97,6 +107,8 @@ class ResourcepackViewModel: ObservableObject {
         activeItemIndex = -1
         activePaintingIndex = index
         activeRecipeIndex = -1
+        activeEntityIndex = -1
+        activeArmorIndex = -1
     }
 
     // MARK: - Recipe-Operationen
@@ -119,6 +131,56 @@ class ResourcepackViewModel: ObservableObject {
         activeItemIndex = -1
         activePaintingIndex = -1
         activeRecipeIndex = index
+        activeEntityIndex = -1
+        activeArmorIndex = -1
+    }
+
+    // MARK: - Entity-Operationen
+
+    func addEntity() {
+        let count = project.entities.count
+        project.addEntity("entity_\(count + 1)")
+        activeEntityIndex = project.entities.count - 1
+    }
+
+    func removeEntity(at index: Int) {
+        project.removeEntity(at: index)
+        if activeEntityIndex >= project.entities.count {
+            activeEntityIndex = project.entities.count - 1
+        }
+    }
+
+    func selectEntity(_ index: Int) {
+        activeBlockIndex = -1
+        activeItemIndex = -1
+        activePaintingIndex = -1
+        activeRecipeIndex = -1
+        activeEntityIndex = index
+        activeArmorIndex = -1
+    }
+
+    // MARK: - Armor-Operationen
+
+    func addArmor() {
+        let count = project.armors.count
+        project.addArmor("armor_\(count + 1)")
+        activeArmorIndex = project.armors.count - 1
+    }
+
+    func removeArmor(at index: Int) {
+        project.removeArmor(at: index)
+        if activeArmorIndex >= project.armors.count {
+            activeArmorIndex = project.armors.count - 1
+        }
+    }
+
+    func selectArmor(_ index: Int) {
+        activeBlockIndex = -1
+        activeItemIndex = -1
+        activePaintingIndex = -1
+        activeRecipeIndex = -1
+        activeEntityIndex = -1
+        activeArmorIndex = index
     }
 
     // MARK: - Aktives Asset
@@ -135,6 +197,12 @@ class ResourcepackViewModel: ObservableObject {
         }
         if activeRecipeIndex >= 0, activeRecipeIndex < project.recipes.count {
             return project.recipes[activeRecipeIndex].name
+        }
+        if activeEntityIndex >= 0, activeEntityIndex < project.entities.count {
+            return project.entities[activeEntityIndex].name
+        }
+        if activeArmorIndex >= 0, activeArmorIndex < project.armors.count {
+            return project.armors[activeArmorIndex].name
         }
         return project.name
     }
@@ -171,5 +239,21 @@ class ResourcepackViewModel: ObservableObject {
         recipe.namespace = project.namespace
         project.recipes.append(recipe)
         activeRecipeIndex = project.recipes.count - 1
+    }
+
+    /// Importiert das aktuelle Entity-Projekt
+    func importCurrentEntity(from entityVM: EntityViewModel) {
+        var entity = entityVM.project
+        entity.namespace = project.namespace
+        project.entities.append(entity)
+        activeEntityIndex = project.entities.count - 1
+    }
+
+    /// Importiert das aktuelle Armor-Projekt
+    func importCurrentArmor(from armorVM: ArmorViewModel) {
+        var armor = armorVM.project
+        armor.namespace = project.namespace
+        project.armors.append(armor)
+        activeArmorIndex = project.armors.count - 1
     }
 }
