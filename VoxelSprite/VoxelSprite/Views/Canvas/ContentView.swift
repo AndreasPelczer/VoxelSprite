@@ -26,6 +26,9 @@ struct ContentView: View {
     @EnvironmentObject var exportVM: ExportViewModel
     @EnvironmentObject var itemVM: ItemViewModel
     @EnvironmentObject var skinVM: SkinViewModel
+    @EnvironmentObject var paintingVM: PaintingViewModel
+    @EnvironmentObject var recipeVM: RecipeViewModel
+    @EnvironmentObject var resourcepackVM: ResourcepackViewModel
 
     @State private var showSaveDialog = false
     @State private var showOpenDialog = false
@@ -127,19 +130,25 @@ struct ContentView: View {
 
             // MARK: - Linke Seite: Canvas-Bereich
             VStack(spacing: 12) {
-                ToolBarView()
+                if canvasVM.editorMode == .recipe {
+                    // Rezept-Modus: Kein Canvas, stattdessen Grid
+                    RecipeGridView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ToolBarView()
 
-                ScrollView([.horizontal, .vertical], showsIndicators: true) {
-                    PixelCanvasView()
+                    ScrollView([.horizontal, .vertical], showsIndicators: true) {
+                        PixelCanvasView()
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    // Animation Timeline (nur im Block-Modus)
+                    if canvasVM.editorMode == .block {
+                        AnimationTimelineView()
+                    }
+
+                    ColorPaletteView()
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                // Animation Timeline (nur im Block-Modus)
-                if canvasVM.editorMode == .block {
-                    AnimationTimelineView()
-                }
-
-                ColorPaletteView()
             }
             .padding(16)
 
@@ -165,14 +174,19 @@ struct ContentView: View {
                         itemSidebarContent
                     case .skin:
                         skinSidebarContent
+                    case .painting:
+                        paintingSidebarContent
+                    case .recipe:
+                        recipeSidebarContent
                     }
 
                     Divider()
 
-                    // MARK: - Face / Layer Overlay (Shared)
-                    overlaySection
-
-                    Divider()
+                    // MARK: - Face / Layer Overlay (Shared, nicht für Recipe)
+                    if canvasVM.editorMode != .recipe {
+                        overlaySection
+                        Divider()
+                    }
 
                     // MARK: - Export
                     switch canvasVM.editorMode {
@@ -182,7 +196,16 @@ struct ContentView: View {
                         itemExportCard
                     case .skin:
                         skinExportCard
+                    case .painting:
+                        paintingExportCard
+                    case .recipe:
+                        recipeExportCard
                     }
+
+                    Divider()
+
+                    // MARK: - Resourcepack (immer sichtbar)
+                    resourcepackSection
                 }
                 .padding(16)
             }
@@ -194,35 +217,48 @@ struct ContentView: View {
     // MARK: - Modus-Umschaltung
 
     private var modeSwitcher: some View {
-        HStack(spacing: 6) {
-            ForEach(CanvasViewModel.EditorMode.allCases) { mode in
-                Button {
-                    withAnimation(.easeOut(duration: 0.2)) {
-                        canvasVM.editorMode = mode
-                        canvasVM.resetUndoHistory()
-                    }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: mode.iconName)
-                            .font(.system(size: 13, weight: .semibold))
-                        Text(mode.rawValue)
-                            .font(.system(size: 13, weight: .bold))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(canvasVM.editorMode == mode ? accentTeal.opacity(0.2) : Color.clear)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(canvasVM.editorMode == mode ? accentTeal.opacity(0.6) : .white.opacity(0.08), lineWidth: canvasVM.editorMode == mode ? 1.5 : 1)
-                    )
-                    .foregroundStyle(canvasVM.editorMode == mode ? accentTeal : .secondary)
+        VStack(spacing: 4) {
+            // Erste Reihe: Block, Item, Steve
+            HStack(spacing: 4) {
+                ForEach([CanvasViewModel.EditorMode.block, .item, .skin], id: \.self) { mode in
+                    modeButton(mode)
                 }
-                .buttonStyle(.plain)
+            }
+            // Zweite Reihe: Painting, Rezept
+            HStack(spacing: 4) {
+                ForEach([CanvasViewModel.EditorMode.painting, .recipe], id: \.self) { mode in
+                    modeButton(mode)
+                }
             }
         }
+    }
+
+    private func modeButton(_ mode: CanvasViewModel.EditorMode) -> some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.2)) {
+                canvasVM.editorMode = mode
+                canvasVM.resetUndoHistory()
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: mode.iconName)
+                    .font(.system(size: 11, weight: .semibold))
+                Text(mode.rawValue)
+                    .font(.system(size: 11, weight: .bold))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(canvasVM.editorMode == mode ? accentTeal.opacity(0.2) : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(canvasVM.editorMode == mode ? accentTeal.opacity(0.6) : .white.opacity(0.08), lineWidth: canvasVM.editorMode == mode ? 1.5 : 1)
+            )
+            .foregroundStyle(canvasVM.editorMode == mode ? accentTeal : .secondary)
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Block Sidebar
@@ -985,6 +1021,380 @@ struct ContentView: View {
 
         exportVM.exportedFileURL = url
         exportVM.showShareSheet = true
+    }
+
+    // MARK: - Painting Sidebar
+
+    @ViewBuilder
+    private var paintingSidebarContent: some View {
+        sectionHeader("PAINTING")
+
+        // Painting-Name
+        HStack {
+            Text("Name:")
+                .font(.system(size: 11, weight: .medium))
+            TextField("painting_name", text: $paintingVM.project.name)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 11, design: .monospaced))
+                .controlSize(.small)
+        }
+
+        // Größen-Auswahl
+        sectionHeader("GRÖSSE")
+
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 4), spacing: 4) {
+            ForEach(PaintingSize.allCases) { size in
+                Button {
+                    paintingVM.resize(to: size)
+                    canvasVM.resetUndoHistory()
+                } label: {
+                    VStack(spacing: 2) {
+                        Image(systemName: size.iconName)
+                            .font(.system(size: 12))
+                        Text(size.rawValue)
+                            .font(.system(size: 9, weight: .bold))
+                        Text(size.description)
+                            .font(.system(size: 7))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(paintingVM.project.size == size ? accentTeal : nil)
+            }
+        }
+
+        // Info
+        HStack(spacing: 4) {
+            Image(systemName: "info.circle")
+                .font(.system(size: 9))
+            Text("\(paintingVM.project.size.blocksWide)×\(paintingVM.project.size.blocksTall) Blöcke · \(paintingVM.project.size.pixelWidth)×\(paintingVM.project.size.pixelHeight) px")
+                .font(.system(size: 9, design: .monospaced))
+        }
+        .foregroundStyle(.tertiary)
+    }
+
+    // MARK: - Painting Export Card
+
+    private var paintingExportCard: some View {
+        VStack(spacing: 10) {
+            sectionHeader("EXPORT")
+
+            // Namespace
+            HStack {
+                Text("Namespace:")
+                    .font(.system(size: 10, weight: .medium))
+                TextField("custom", text: $paintingVM.project.namespace)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 10, design: .monospaced))
+                    .controlSize(.small)
+            }
+
+            // Transparenter Hintergrund
+            Toggle("Transparenter Hintergrund", isOn: $exportVM.transparentBackground)
+                .font(.system(size: 11))
+                .toggleStyle(.switch)
+                .controlSize(.small)
+
+            exportBadge("\(paintingVM.project.size.rawValue)", icon: "photo.artframe", color: .purple)
+
+            // Export-Buttons
+            VStack(spacing: 6) {
+                Button {
+                    exportPaintingPNG()
+                } label: {
+                    Label("Painting PNG", systemImage: "photo")
+                        .font(.system(size: 11, weight: .bold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .tint(accentTeal)
+
+                Button {
+                    exportVM.exportPaintingDatapack(paintingVM: paintingVM)
+                } label: {
+                    Label("Datapack (painting_variant)", systemImage: "shippingbox")
+                        .font(.system(size: 11, weight: .bold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .tint(accentTeal.opacity(0.7))
+            }
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.white.opacity(0.04))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(accentTeal.opacity(0.15), lineWidth: 1)
+        )
+    }
+
+    private func exportPaintingPNG() {
+        let canvas = paintingVM.project.canvas
+        guard let cgImage = canvas.toCGImage() else { return }
+
+        #if canImport(AppKit)
+        let rep = NSBitmapImageRep(cgImage: cgImage)
+        guard let pngData = rep.representation(using: .png, properties: [:]) else { return }
+        #elseif canImport(UIKit)
+        guard let pngData = UIImage(cgImage: cgImage).pngData() else { return }
+        #else
+        return
+        #endif
+
+        let fileName = "\(paintingVM.project.name).png"
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+        try? pngData.write(to: url, options: .atomic)
+
+        exportVM.exportedFileURL = url
+        exportVM.showShareSheet = true
+    }
+
+    // MARK: - Recipe Sidebar
+
+    @ViewBuilder
+    private var recipeSidebarContent: some View {
+        sectionHeader("REZEPT")
+
+        // Rezept-Name
+        HStack {
+            Text("Name:")
+                .font(.system(size: 11, weight: .medium))
+            TextField("recipe_name", text: $recipeVM.recipe.name)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 11, design: .monospaced))
+                .controlSize(.small)
+        }
+
+        // Namespace
+        HStack {
+            Text("Namespace:")
+                .font(.system(size: 10, weight: .medium))
+            TextField("minecraft", text: $recipeVM.recipe.namespace)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 10, design: .monospaced))
+                .controlSize(.small)
+        }
+
+        // Info
+        HStack(spacing: 4) {
+            Image(systemName: recipeVM.recipe.type.iconName)
+                .font(.system(size: 9))
+            Text(recipeVM.recipe.type.description)
+                .font(.system(size: 9, design: .monospaced))
+        }
+        .foregroundStyle(.tertiary)
+    }
+
+    // MARK: - Recipe Export Card
+
+    private var recipeExportCard: some View {
+        VStack(spacing: 10) {
+            sectionHeader("EXPORT")
+
+            exportBadge(recipeVM.recipe.type.rawValue, icon: recipeVM.recipe.type.iconName, color: .orange)
+
+            VStack(spacing: 6) {
+                Button {
+                    exportVM.exportRecipeJSON(recipeVM: recipeVM)
+                } label: {
+                    Label("Recipe JSON", systemImage: "doc.text")
+                        .font(.system(size: 11, weight: .bold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .tint(accentTeal)
+
+                Button {
+                    exportVM.exportDatapack(recipeVM: recipeVM)
+                } label: {
+                    Label("Datapack", systemImage: "shippingbox")
+                        .font(.system(size: 11, weight: .bold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .tint(accentTeal.opacity(0.7))
+            }
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.white.opacity(0.04))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(accentTeal.opacity(0.15), lineWidth: 1)
+        )
+    }
+
+    // MARK: - Resourcepack Section (Multi-Asset)
+
+    @ViewBuilder
+    private var resourcepackSection: some View {
+        sectionHeader("RESOURCEPACK")
+
+        // Pack-Name
+        HStack {
+            Text("Pack:")
+                .font(.system(size: 10, weight: .medium))
+            TextField("my_resourcepack", text: $resourcepackVM.project.name)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 10, design: .monospaced))
+                .controlSize(.small)
+        }
+
+        // Namespace
+        HStack {
+            Text("Namespace:")
+                .font(.system(size: 10, weight: .medium))
+            TextField("custom", text: $resourcepackVM.project.namespace)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 10, design: .monospaced))
+                .controlSize(.small)
+        }
+
+        // Asset-Liste
+        VStack(spacing: 4) {
+            // Blöcke
+            ForEach(0..<resourcepackVM.project.blocks.count, id: \.self) { i in
+                assetRow(icon: "cube", name: resourcepackVM.project.blocks[i].name, color: .cyan) {
+                    resourcepackVM.removeBlock(at: i)
+                }
+            }
+            // Items
+            ForEach(0..<resourcepackVM.project.items.count, id: \.self) { i in
+                assetRow(icon: "shield", name: resourcepackVM.project.items[i].name, color: .green) {
+                    resourcepackVM.removeItem(at: i)
+                }
+            }
+            // Paintings
+            ForEach(0..<resourcepackVM.project.paintings.count, id: \.self) { i in
+                assetRow(icon: "photo.artframe", name: resourcepackVM.project.paintings[i].name, color: .purple) {
+                    resourcepackVM.removePainting(at: i)
+                }
+            }
+            // Recipes
+            ForEach(0..<resourcepackVM.project.recipes.count, id: \.self) { i in
+                assetRow(icon: "square.grid.3x3", name: resourcepackVM.project.recipes[i].name, color: .orange) {
+                    resourcepackVM.removeRecipe(at: i)
+                }
+            }
+        }
+
+        if resourcepackVM.project.totalAssetCount == 0 {
+            Text("Noch keine Assets. Nutze '+' um\naktuellen Editor-Inhalt hinzuzufügen.")
+                .font(.system(size: 8, design: .monospaced))
+                .foregroundStyle(.tertiary)
+                .multilineTextAlignment(.center)
+        }
+
+        // Hinzufügen-Buttons
+        HStack(spacing: 4) {
+            Button {
+                resourcepackVM.importCurrentBlock(from: blockVM)
+            } label: {
+                Label("Block", systemImage: "plus")
+                    .font(.system(size: 9, weight: .bold))
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.mini)
+            .tint(.cyan)
+
+            Button {
+                resourcepackVM.importCurrentItem(from: itemVM)
+            } label: {
+                Label("Item", systemImage: "plus")
+                    .font(.system(size: 9, weight: .bold))
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.mini)
+            .tint(.green)
+
+            Button {
+                resourcepackVM.importCurrentPainting(from: paintingVM)
+            } label: {
+                Label("Painting", systemImage: "plus")
+                    .font(.system(size: 9, weight: .bold))
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.mini)
+            .tint(.purple)
+
+            if canvasVM.editorMode == .recipe {
+                Button {
+                    resourcepackVM.importCurrentRecipe(from: recipeVM)
+                } label: {
+                    Label("Rezept", systemImage: "plus")
+                        .font(.system(size: 9, weight: .bold))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+                .tint(.orange)
+            }
+        }
+
+        // Export Resourcepack + Datapack
+        if resourcepackVM.project.totalAssetCount > 0 {
+            VStack(spacing: 6) {
+                Button {
+                    exportVM.exportCombinedResourcepack(resourcepackVM: resourcepackVM)
+                } label: {
+                    Label("Resourcepack exportieren (\(resourcepackVM.project.totalAssetCount) Assets)", systemImage: "shippingbox.fill")
+                        .font(.system(size: 10, weight: .bold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .tint(accentTeal)
+
+                if !resourcepackVM.project.recipes.isEmpty {
+                    Button {
+                        exportVM.exportCombinedDatapack(resourcepackVM: resourcepackVM)
+                    } label: {
+                        Label("Datapack exportieren (\(resourcepackVM.project.recipes.count) Recipes)", systemImage: "doc.text.fill")
+                            .font(.system(size: 10, weight: .bold))
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .tint(.orange)
+                }
+            }
+        }
+    }
+
+    private func assetRow(icon: String, name: String, color: Color, onDelete: @escaping () -> Void) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 9))
+                .foregroundStyle(color)
+            Text(name)
+                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .foregroundStyle(.primary)
+            Spacer()
+            Button {
+                onDelete()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.red.opacity(0.5))
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 4)
+                .fill(color.opacity(0.08))
+        )
     }
 
     // MARK: - Subviews

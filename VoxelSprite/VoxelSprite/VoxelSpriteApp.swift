@@ -21,6 +21,9 @@ struct VoxelSpriteApp: App {
     @StateObject private var itemVM = ItemViewModel()
     @StateObject private var paletteManager = PaletteManager()
     @StateObject private var skinVM = SkinViewModel()
+    @StateObject private var paintingVM = PaintingViewModel()
+    @StateObject private var recipeVM = RecipeViewModel()
+    @StateObject private var resourcepackVM = ResourcepackViewModel()
 
     @Environment(\.scenePhase) private var scenePhase
 
@@ -41,10 +44,14 @@ struct VoxelSpriteApp: App {
                 .environmentObject(itemVM)
                 .environmentObject(paletteManager)
                 .environmentObject(skinVM)
+                .environmentObject(paintingVM)
+                .environmentObject(recipeVM)
+                .environmentObject(resourcepackVM)
                 .onAppear {
                     canvasVM.connect(to: blockVM)
                     canvasVM.connect(to: itemVM)
                     canvasVM.connect(to: skinVM)
+                    canvasVM.connect(to: paintingVM)
                     exportVM.connect(to: blockVM)
                     exportVM.connect(to: itemVM)
                     blockVM.startAutosave()
