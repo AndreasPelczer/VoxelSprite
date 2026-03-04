@@ -3,14 +3,24 @@
 //  VoxelSprite
 //
 //  Die Werkzeugleiste über dem Canvas.
-//  Stift, Radierer, Füllen, Linie, Rechteck, Grid-Toggle, Undo/Redo.
+//  Stift, Radierer, Füllen, Linie, Rechteck, Pipette,
+//  Transformationen, Grid-Toggle, Undo/Redo, Import.
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
+#if canImport(AppKit)
+import AppKit
+#endif
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct ToolBarView: View {
 
     @EnvironmentObject var canvasVM: CanvasViewModel
+
+    @State private var showImportPicker = false
 
     /// Electric Teal Akzentfarbe
     private let teal = Color(red: 0.0, green: 0.85, blue: 0.85)
@@ -22,6 +32,22 @@ struct ToolBarView: View {
 
             ForEach(CanvasViewModel.Tool.allCases, id: \.self) { tool in
                 toolButton(tool)
+            }
+
+            divider
+
+            // MARK: - Transformationen
+
+            actionButton(icon: "arrow.left.and.right.righttriangle.left.righttriangle.right", label: "Horizontal spiegeln", enabled: canvasVM.editorMode != .recipe) {
+                canvasVM.mirrorHorizontal()
+            }
+
+            actionButton(icon: "arrow.up.and.down.righttriangle.up.righttriangle.down", label: "Vertikal spiegeln", enabled: canvasVM.editorMode != .recipe) {
+                canvasVM.mirrorVertical()
+            }
+
+            actionButton(icon: "rotate.right", label: "90° drehen", enabled: canvasVM.editorMode != .recipe && canvasVM.canvasWidth == canvasVM.canvasHeight) {
+                canvasVM.rotateCW()
             }
 
             divider
@@ -87,6 +113,18 @@ struct ToolBarView: View {
 
             divider
 
+            // MARK: - Import PNG
+
+            actionButton(
+                icon: "square.and.arrow.down.on.square",
+                label: "PNG importieren",
+                enabled: canvasVM.editorMode != .recipe
+            ) {
+                showImportPicker = true
+            }
+
+            divider
+
             // MARK: - Canvas leeren
 
             actionButton(
@@ -102,6 +140,34 @@ struct ToolBarView: View {
         .padding(.vertical, 6)
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 8))
+        .fileImporter(
+            isPresented: $showImportPicker,
+            allowedContentTypes: [.png, .jpeg, .tiff, .bmp],
+            allowsMultipleSelection: false
+        ) { result in
+            handleImport(result)
+        }
+    }
+
+    // MARK: - Import Handler
+
+    private func handleImport(_ result: Result<[URL], Error>) {
+        guard case .success(let urls) = result, let url = urls.first else { return }
+
+        let didStart = url.startAccessingSecurityScopedResource()
+        defer { if didStart { url.stopAccessingSecurityScopedResource() } }
+
+        guard let data = try? Data(contentsOf: url) else { return }
+
+        #if canImport(AppKit)
+        guard let nsImage = NSImage(data: data),
+              let cgImage = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+        canvasVM.importImage(cgImage)
+        #elseif canImport(UIKit)
+        guard let uiImage = UIImage(data: data),
+              let cgImage = uiImage.cgImage else { return }
+        canvasVM.importImage(cgImage)
+        #endif
     }
 
     // MARK: - Subviews
@@ -166,11 +232,12 @@ struct ToolBarView: View {
 
     private func shortcutKey(for tool: CanvasViewModel.Tool) -> KeyEquivalent {
         switch tool {
-        case .pen:       return "1"
-        case .eraser:    return "2"
-        case .fill:      return "3"
-        case .line:      return "4"
-        case .rectangle: return "5"
+        case .pen:        return "1"
+        case .eraser:     return "2"
+        case .fill:       return "3"
+        case .line:       return "4"
+        case .rectangle:  return "5"
+        case .eyedropper: return "6"
         }
     }
 }

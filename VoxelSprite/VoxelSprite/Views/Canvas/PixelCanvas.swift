@@ -139,4 +139,87 @@ struct PixelCanvas {
 
         return context.makeImage()
     }
+
+    // MARK: - PNG Import
+
+    /// Erzeugt ein PixelCanvas aus einem CGImage.
+    /// Skaliert das Bild auf die Zielgröße falls angegeben, sonst nutzt die Originalgröße.
+    static func fromCGImage(_ cgImage: CGImage, targetWidth: Int? = nil, targetHeight: Int? = nil) -> PixelCanvas? {
+        let w = targetWidth ?? cgImage.width
+        let h = targetHeight ?? cgImage.height
+        guard w > 0, w <= 128, h > 0, h <= 128 else { return nil }
+
+        // Bild auf Zielgröße rendern
+        guard let context = CGContext(
+            data: nil,
+            width: w,
+            height: h,
+            bitsPerComponent: 8,
+            bytesPerRow: w * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+
+        context.interpolationQuality = .none
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: w, height: h))
+
+        guard let data = context.data else { return nil }
+        let ptr = data.bindMemory(to: UInt8.self, capacity: w * h * 4)
+
+        var canvas = PixelCanvas(width: w, height: h)
+        for y in 0..<h {
+            for x in 0..<w {
+                // CGContext hat Y=0 unten, Canvas hat Y=0 oben
+                let flippedY = h - 1 - y
+                let offset = (flippedY * w + x) * 4
+                let r = ptr[offset]
+                let g = ptr[offset + 1]
+                let b = ptr[offset + 2]
+                let a = ptr[offset + 3]
+
+                if a > 0 {
+                    canvas.setPixel(at: x, y: y, color: Color(
+                        red: Double(r) / 255.0,
+                        green: Double(g) / 255.0,
+                        blue: Double(b) / 255.0,
+                        opacity: Double(a) / 255.0
+                    ))
+                }
+            }
+        }
+        return canvas
+    }
+
+    // MARK: - Canvas-Transformationen
+
+    /// Horizontal spiegeln (links ↔ rechts)
+    func mirroredHorizontal() -> PixelCanvas {
+        var result = PixelCanvas(width: width, height: height)
+        for y in 0..<height {
+            for x in 0..<width {
+                result.pixels[y][width - 1 - x] = pixels[y][x]
+            }
+        }
+        return result
+    }
+
+    /// Vertikal spiegeln (oben ↔ unten)
+    func mirroredVertical() -> PixelCanvas {
+        var result = PixelCanvas(width: width, height: height)
+        for y in 0..<height {
+            result.pixels[height - 1 - y] = pixels[y]
+        }
+        return result
+    }
+
+    /// 90° im Uhrzeigersinn drehen
+    func rotatedCW() -> PixelCanvas {
+        var result = PixelCanvas(width: height, height: width)
+        for y in 0..<height {
+            for x in 0..<width {
+                result.pixels[x][height - 1 - y] = pixels[y][x]
+            }
+        }
+        return result
+    }
 }

@@ -35,6 +35,14 @@ class ExportViewModel: ObservableObject {
     @Published var exportStatus: String = ""
     @Published var transparentBackground: Bool = true
 
+    // MARK: - Modulare Komponenten
+
+    /// PNG-Renderer (extrahiert für Testbarkeit)
+    var renderer: PNGRenderer { PNGRenderer(transparentBackground: transparentBackground) }
+
+    /// Minecraft Pack-Writer (extrahiert für Testbarkeit)
+    var packWriter: MinecraftPackWriter { MinecraftPackWriter(renderer: renderer) }
+
     // MARK: - Referenzen
 
     private weak var blockViewModel: BlockViewModel?
