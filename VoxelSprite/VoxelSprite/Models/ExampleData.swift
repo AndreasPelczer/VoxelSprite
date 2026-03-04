@@ -137,7 +137,6 @@ struct ExampleData {
 
     static func fillSkin(_ skinVM: SkinViewModel) {
         skinVM.project.name = "andy"
-        let atlas = skinVM.project.baseLayer
 
         // Head UV: base origin (0, 0), d=8, w=8, h=8
         // Front face: (8, 8) to (15, 15) — Gesicht
