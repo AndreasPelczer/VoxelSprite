@@ -92,6 +92,18 @@ struct VoxelSpriteApp: App {
                     if workspaceManager.hasAutosave {
                         try? workspaceManager.loadAutosave()
                         canvasVM.resetUndoHistory()
+                    } else {
+                        // Beispieldaten für App Store Screenshots laden
+                        ExampleData.loadAll(
+                            blockVM: blockVM,
+                            itemVM: itemVM,
+                            skinVM: skinVM,
+                            paintingVM: paintingVM,
+                            entityVM: entityVM,
+                            armorVM: armorVM,
+                            recipeVM: recipeVM
+                        )
+                        canvasVM.resetUndoHistory()
                     }
                 }
                 .onChange(of: scenePhase) { _, newPhase in
