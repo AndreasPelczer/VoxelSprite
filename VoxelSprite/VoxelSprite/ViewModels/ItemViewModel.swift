@@ -19,6 +19,9 @@ class ItemViewModel: ObservableObject {
     /// Aktuell bearbeiteter Layer
     @Published var activeLayerIndex: Int = 0
 
+    /// Referenz zum Workspace-Manager für Autosave
+    weak var workspaceManager: WorkspaceManager?
+
     // MARK: - Init
 
     init() {
@@ -112,6 +115,6 @@ class ItemViewModel: ObservableObject {
     }
 
     func scheduleStrokeAutosave() {
-        // TODO: Autosave für Items
+        workspaceManager?.scheduleStrokeAutosave()
     }
 }

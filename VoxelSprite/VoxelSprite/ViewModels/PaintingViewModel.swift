@@ -15,6 +15,9 @@ class PaintingViewModel: ObservableObject {
 
     @Published var project: PaintingProject
 
+    /// Referenz zum Workspace-Manager für Autosave
+    weak var workspaceManager: WorkspaceManager?
+
     // MARK: - Init
 
     init() {
@@ -50,6 +53,6 @@ class PaintingViewModel: ObservableObject {
     }
 
     func scheduleStrokeAutosave() {
-        // TODO: Autosave für Paintings
+        workspaceManager?.scheduleStrokeAutosave()
     }
 }

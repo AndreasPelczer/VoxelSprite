@@ -25,6 +25,9 @@ class ArmorViewModel: ObservableObject {
     /// Das extrahierte Canvas für die aktuelle Auswahl
     @Published var editCanvas: PixelCanvas
 
+    /// Referenz zum Workspace-Manager für Autosave
+    weak var workspaceManager: WorkspaceManager?
+
     // MARK: - Init
 
     init() {
@@ -97,6 +100,6 @@ class ArmorViewModel: ObservableObject {
     }
 
     func scheduleStrokeAutosave() {
-        // TODO: Autosave für Armor
+        workspaceManager?.scheduleStrokeAutosave()
     }
 }
