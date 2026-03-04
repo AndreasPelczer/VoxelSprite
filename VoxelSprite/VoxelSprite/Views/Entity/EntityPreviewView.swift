@@ -167,7 +167,8 @@ struct EntityPreviewView: View {
     // MARK: - Paint Handling
 
     /// SCNBox Face-Index → SkinFace
-    private static let boxFaceToSkinFace: [SkinFace] = [.right, .left, .top, .bottom, .front, .back]
+    /// Charakter schaut +Z (zur Kamera): +X=Links, -X=Rechts
+    private static let boxFaceToSkinFace: [SkinFace] = [.left, .right, .top, .bottom, .front, .back]
 
     private func handlePaintHit(nodeName: String, faceIndex: Int, uv: CGPoint) {
         guard faceIndex >= 0, faceIndex < Self.boxFaceToSkinFace.count else { return }
@@ -213,7 +214,7 @@ struct EntityPreviewView: View {
     // MARK: - Materials
 
     static func materialsForPart(_ part: EntityBodyPart, project: EntityProject, showGrid: Bool) -> [SCNMaterial] {
-        let faceOrder: [SkinFace] = [.right, .left, .top, .bottom, .front, .back]
+        let faceOrder: [SkinFace] = [.left, .right, .top, .bottom, .front, .back]
         return faceOrder.map { face in
             let material = SCNMaterial()
             let canvas = project.extractRegion(bodyPart: part, face: face)
