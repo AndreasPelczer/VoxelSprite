@@ -814,6 +814,470 @@ class ExportViewModel: ObservableObject {
         ]
     }
 
+    // MARK: - Painting Datapack Export
+
+    /// Exportiert ein Painting als Datapack mit painting_variant Registry (1.19+)
+    func exportPaintingDatapack(paintingVM: PaintingViewModel) {
+        isExporting = true
+        errorMessage = nil
+        exportProgress = 0
+        exportStatus = "Painting-Datapack wird erstellt…"
+
+        let snapshot = paintingVM.project
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+
+            do {
+                let url = try self.createPaintingDatapack(project: snapshot)
+
+                DispatchQueue.main.async {
+                    self.exportProgress = 1.0
+                    self.exportStatus = "Fertig!"
+                    self.exportedFileURL = url
+                    self.showShareSheet = true
+                    self.isExporting = false
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.errorMessage = "Painting-Export fehlgeschlagen: \(error.localizedDescription)"
+                    self.isExporting = false
+                }
+            }
+        }
+    }
+
+    private func createPaintingDatapack(project: PaintingProject) throws -> URL {
+        let fm = FileManager.default
+        let baseName = uniqueFileName(base: project.name, ext: "")
+        let packDir = fm.temporaryDirectory.appendingPathComponent("painting_datapack_\(baseName)")
+
+        // Textur: assets/{namespace}/textures/painting/{name}.png
+        let texturesDir = packDir
+            .appendingPathComponent("assets/\(project.namespace)/textures/painting")
+        try fm.createDirectory(at: texturesDir, withIntermediateDirectories: true)
+
+        // Painting-Textur exportieren
+        guard let cgImage = renderCanvasToFullCGImage(project.canvas) else {
+            throw ExportError.frameRenderFailed
+        }
+        guard let pngData = cgImageToPNGData(cgImage) else {
+            throw ExportError.pngEncodingFailed
+        }
+        try pngData.write(to: texturesDir.appendingPathComponent("\(project.name).png"), options: .atomic)
+
+        // Painting Variant Registry: data/{namespace}/painting_variant/{name}.json
+        let variantDir = packDir
+            .appendingPathComponent("data/\(project.namespace)/painting_variant")
+        try fm.createDirectory(at: variantDir, withIntermediateDirectories: true)
+
+        let variantJSON: [String: Any] = [
+            "asset_id": "\(project.namespace):\(project.name)",
+            "width": project.size.blocksWide,
+            "height": project.size.blocksTall
+        ]
+        let variantData = try JSONSerialization.data(withJSONObject: variantJSON, options: .prettyPrinted)
+        try variantData.write(to: variantDir.appendingPathComponent("\(project.name).json"), options: .atomic)
+
+        // pack.mcmeta
+        let packMeta: [String: Any] = [
+            "pack": [
+                "pack_format": 26,
+                "description": "VoxelSprite Painting: \(project.name)"
+            ]
+        ]
+        let packMetaData = try JSONSerialization.data(withJSONObject: packMeta, options: .prettyPrinted)
+        try packMetaData.write(to: packDir.appendingPathComponent("pack.mcmeta"), options: .atomic)
+
+        return packDir
+    }
+
+    // MARK: - Recipe JSON Export
+
+    /// Exportiert ein einzelnes Recipe als JSON-Datei
+    func exportRecipeJSON(recipeVM: RecipeViewModel) {
+        guard let data = recipeVM.exportJSONData() else { return }
+
+        let fileName = "\(recipeVM.recipe.name).json"
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+        try? data.write(to: url, options: .atomic)
+
+        exportedFileURL = url
+        showShareSheet = true
+    }
+
+    // MARK: - Datapack Export (Recipes + Loot Tables)
+
+    /// Exportiert ein Datapack mit einem einzelnen Rezept
+    func exportDatapack(recipeVM: RecipeViewModel) {
+        isExporting = true
+        errorMessage = nil
+        exportProgress = 0
+        exportStatus = "Datapack wird erstellt…"
+
+        let recipe = recipeVM.recipe
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+
+            do {
+                let url = try self.createSingleRecipeDatapack(recipe: recipe)
+
+                DispatchQueue.main.async {
+                    self.exportProgress = 1.0
+                    self.exportStatus = "Fertig!"
+                    self.exportedFileURL = url
+                    self.showShareSheet = true
+                    self.isExporting = false
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.errorMessage = "Datapack-Export fehlgeschlagen: \(error.localizedDescription)"
+                    self.isExporting = false
+                }
+            }
+        }
+    }
+
+    private func createSingleRecipeDatapack(recipe: CraftingRecipe) throws -> URL {
+        let fm = FileManager.default
+        let baseName = uniqueFileName(base: recipe.name, ext: "")
+        let packDir = fm.temporaryDirectory.appendingPathComponent("datapack_\(baseName)")
+
+        // Recipe: data/{namespace}/recipe/{name}.json
+        let recipesDir = packDir
+            .appendingPathComponent("data/\(recipe.namespace)/recipe")
+        try fm.createDirectory(at: recipesDir, withIntermediateDirectories: true)
+
+        let recipeJSON = recipe.toJSON()
+        let recipeData = try JSONSerialization.data(withJSONObject: recipeJSON, options: .prettyPrinted)
+        try recipeData.write(to: recipesDir.appendingPathComponent("\(recipe.name).json"), options: .atomic)
+
+        // Loot Table (einfach: Block dropt sich selbst)
+        if !recipe.result.isEmpty {
+            let lootDir = packDir
+                .appendingPathComponent("data/\(recipe.namespace)/loot_table/blocks")
+            try fm.createDirectory(at: lootDir, withIntermediateDirectories: true)
+
+            let resultName = recipe.result.itemID.components(separatedBy: ":").last ?? recipe.result.itemID
+            let lootJSON: [String: Any] = [
+                "type": "minecraft:block",
+                "pools": [
+                    [
+                        "rolls": 1,
+                        "entries": [
+                            [
+                                "type": "minecraft:item",
+                                "name": recipe.result.itemID
+                            ]
+                        ]
+                    ]
+                ]
+            ]
+            let lootData = try JSONSerialization.data(withJSONObject: lootJSON, options: .prettyPrinted)
+            try lootData.write(to: lootDir.appendingPathComponent("\(resultName).json"), options: .atomic)
+        }
+
+        // pack.mcmeta
+        let packMeta: [String: Any] = [
+            "pack": [
+                "pack_format": 26,
+                "description": "VoxelSprite Datapack: \(recipe.name)"
+            ]
+        ]
+        let packMetaData = try JSONSerialization.data(withJSONObject: packMeta, options: .prettyPrinted)
+        try packMetaData.write(to: packDir.appendingPathComponent("pack.mcmeta"), options: .atomic)
+
+        return packDir
+    }
+
+    // MARK: - Combined Resourcepack Export (Multi-Asset)
+
+    /// Exportiert ein kombiniertes Resourcepack mit allen Assets
+    func exportCombinedResourcepack(resourcepackVM: ResourcepackViewModel) {
+        isExporting = true
+        errorMessage = nil
+        exportProgress = 0
+        exportStatus = "Resourcepack wird gebündelt…"
+
+        let project = resourcepackVM.project
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+
+            do {
+                let url = try self.createCombinedResourcepack(project: project)
+
+                DispatchQueue.main.async {
+                    self.exportProgress = 1.0
+                    self.exportStatus = "Fertig!"
+                    self.exportedFileURL = url
+                    self.showShareSheet = true
+                    self.isExporting = false
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.errorMessage = "Resourcepack-Export fehlgeschlagen: \(error.localizedDescription)"
+                    self.isExporting = false
+                }
+            }
+        }
+    }
+
+    private func createCombinedResourcepack(project: ResourcepackProject) throws -> URL {
+        let fm = FileManager.default
+        let baseName = uniqueFileName(base: project.name, ext: "")
+        let packDir = fm.temporaryDirectory.appendingPathComponent("resourcepack_\(baseName)")
+
+        let ns = project.namespace
+        let totalSteps = max(1, project.totalAssetCount)
+        var currentStep = 0
+
+        // Blöcke
+        for block in project.blocks {
+            let texturesDir = packDir.appendingPathComponent("assets/\(ns)/textures/block")
+            let modelsDir = packDir.appendingPathComponent("assets/\(ns)/models/block")
+            let blockstatesDir = packDir.appendingPathComponent("assets/\(ns)/blockstates")
+
+            try fm.createDirectory(at: texturesDir, withIntermediateDirectories: true)
+            try fm.createDirectory(at: modelsDir, withIntermediateDirectories: true)
+            try fm.createDirectory(at: blockstatesDir, withIntermediateDirectories: true)
+
+            var blockCopy = block
+            blockCopy.namespace = ns
+
+            let textureNames = try exportTextures(project: blockCopy, to: texturesDir)
+            let modelJSON = createBlockModel(project: blockCopy, textureNames: textureNames)
+            let modelData = try JSONSerialization.data(withJSONObject: modelJSON, options: .prettyPrinted)
+            try modelData.write(to: modelsDir.appendingPathComponent("\(blockCopy.name).json"), options: .atomic)
+
+            let blockstateJSON = createBlockstate(project: blockCopy)
+            let bsData = try JSONSerialization.data(withJSONObject: blockstateJSON, options: .prettyPrinted)
+            try bsData.write(to: blockstatesDir.appendingPathComponent("\(blockCopy.name).json"), options: .atomic)
+
+            currentStep += 1
+            let progress = Double(currentStep) / Double(totalSteps)
+            DispatchQueue.main.async { [weak self] in
+                self?.exportProgress = progress * 0.9
+                self?.exportStatus = "Block: \(blockCopy.name)…"
+            }
+        }
+
+        // Items
+        for item in project.items {
+            let texturesDir = packDir.appendingPathComponent("assets/\(ns)/textures/item")
+            let modelsDir = packDir.appendingPathComponent("assets/\(ns)/models/item")
+
+            try fm.createDirectory(at: texturesDir, withIntermediateDirectories: true)
+            try fm.createDirectory(at: modelsDir, withIntermediateDirectories: true)
+
+            var itemCopy = item
+            itemCopy.namespace = ns
+
+            for (index, layer) in itemCopy.layers.enumerated() {
+                guard let cgImage = renderCanvasToCGImage(layer, gridSize: itemCopy.gridSize) else {
+                    throw ExportError.frameRenderFailed
+                }
+                guard let pngData = cgImageToPNGData(cgImage) else {
+                    throw ExportError.pngEncodingFailed
+                }
+                let texName = itemCopy.textureName(for: index)
+                try pngData.write(to: texturesDir.appendingPathComponent("\(texName).png"), options: .atomic)
+            }
+
+            let modelJSON = createItemModel(project: itemCopy)
+            let modelData = try JSONSerialization.data(withJSONObject: modelJSON, options: .prettyPrinted)
+            try modelData.write(to: modelsDir.appendingPathComponent("\(itemCopy.name).json"), options: .atomic)
+
+            currentStep += 1
+            let progress = Double(currentStep) / Double(totalSteps)
+            DispatchQueue.main.async { [weak self] in
+                self?.exportProgress = progress * 0.9
+                self?.exportStatus = "Item: \(itemCopy.name)…"
+            }
+        }
+
+        // Paintings
+        for painting in project.paintings {
+            let texturesDir = packDir.appendingPathComponent("assets/\(ns)/textures/painting")
+            try fm.createDirectory(at: texturesDir, withIntermediateDirectories: true)
+
+            guard let cgImage = renderCanvasToFullCGImage(painting.canvas) else {
+                throw ExportError.frameRenderFailed
+            }
+            guard let pngData = cgImageToPNGData(cgImage) else {
+                throw ExportError.pngEncodingFailed
+            }
+            try pngData.write(to: texturesDir.appendingPathComponent("\(painting.name).png"), options: .atomic)
+
+            currentStep += 1
+            let progress = Double(currentStep) / Double(totalSteps)
+            DispatchQueue.main.async { [weak self] in
+                self?.exportProgress = progress * 0.9
+                self?.exportStatus = "Painting: \(painting.name)…"
+            }
+        }
+
+        // pack.mcmeta
+        let packFormat: Int
+        switch project.targetVersion {
+        case .java:    packFormat = 15
+        case .bedrock: packFormat = 2
+        }
+
+        let packMeta: [String: Any] = [
+            "pack": [
+                "pack_format": packFormat,
+                "description": "VoxelSprite: \(project.name) (\(project.totalAssetCount) assets)"
+            ]
+        ]
+        let packMetaData = try JSONSerialization.data(withJSONObject: packMeta, options: .prettyPrinted)
+        try packMetaData.write(to: packDir.appendingPathComponent("pack.mcmeta"), options: .atomic)
+
+        return packDir
+    }
+
+    // MARK: - Combined Datapack Export
+
+    /// Exportiert ein Datapack mit allen Recipes
+    func exportCombinedDatapack(resourcepackVM: ResourcepackViewModel) {
+        isExporting = true
+        errorMessage = nil
+        exportProgress = 0
+        exportStatus = "Datapack wird gebündelt…"
+
+        let project = resourcepackVM.project
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+
+            do {
+                let url = try self.createCombinedDatapack(project: project)
+
+                DispatchQueue.main.async {
+                    self.exportProgress = 1.0
+                    self.exportStatus = "Fertig!"
+                    self.exportedFileURL = url
+                    self.showShareSheet = true
+                    self.isExporting = false
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.errorMessage = "Datapack-Export fehlgeschlagen: \(error.localizedDescription)"
+                    self.isExporting = false
+                }
+            }
+        }
+    }
+
+    private func createCombinedDatapack(project: ResourcepackProject) throws -> URL {
+        let fm = FileManager.default
+        let baseName = uniqueFileName(base: project.name, ext: "")
+        let packDir = fm.temporaryDirectory.appendingPathComponent("datapack_\(baseName)")
+
+        let ns = project.namespace
+
+        // Recipes
+        for recipe in project.recipes {
+            let recipesDir = packDir.appendingPathComponent("data/\(ns)/recipe")
+            try fm.createDirectory(at: recipesDir, withIntermediateDirectories: true)
+
+            var recipeCopy = recipe
+            recipeCopy.namespace = ns
+
+            let recipeJSON = recipeCopy.toJSON()
+            let recipeData = try JSONSerialization.data(withJSONObject: recipeJSON, options: .prettyPrinted)
+            try recipeData.write(to: recipesDir.appendingPathComponent("\(recipeCopy.name).json"), options: .atomic)
+
+            // Loot Table
+            if !recipeCopy.result.isEmpty {
+                let lootDir = packDir.appendingPathComponent("data/\(ns)/loot_table/blocks")
+                try fm.createDirectory(at: lootDir, withIntermediateDirectories: true)
+
+                let resultName = recipeCopy.result.itemID.components(separatedBy: ":").last ?? recipeCopy.result.itemID
+                let lootJSON: [String: Any] = [
+                    "type": "minecraft:block",
+                    "pools": [
+                        [
+                            "rolls": 1,
+                            "entries": [
+                                [
+                                    "type": "minecraft:item",
+                                    "name": recipeCopy.result.itemID
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+                let lootData = try JSONSerialization.data(withJSONObject: lootJSON, options: .prettyPrinted)
+                try lootData.write(to: lootDir.appendingPathComponent("\(resultName).json"), options: .atomic)
+            }
+        }
+
+        // Painting Variants
+        for painting in project.paintings {
+            let variantDir = packDir.appendingPathComponent("data/\(ns)/painting_variant")
+            try fm.createDirectory(at: variantDir, withIntermediateDirectories: true)
+
+            let variantJSON: [String: Any] = [
+                "asset_id": "\(ns):\(painting.name)",
+                "width": painting.size.blocksWide,
+                "height": painting.size.blocksTall
+            ]
+            let variantData = try JSONSerialization.data(withJSONObject: variantJSON, options: .prettyPrinted)
+            try variantData.write(to: variantDir.appendingPathComponent("\(painting.name).json"), options: .atomic)
+        }
+
+        // pack.mcmeta
+        let packMeta: [String: Any] = [
+            "pack": [
+                "pack_format": 26,
+                "description": "VoxelSprite Datapack: \(project.name)"
+            ]
+        ]
+        let packMetaData = try JSONSerialization.data(withJSONObject: packMeta, options: .prettyPrinted)
+        try packMetaData.write(to: packDir.appendingPathComponent("pack.mcmeta"), options: .atomic)
+
+        return packDir
+    }
+
+    // MARK: - Full Canvas Rendering (für Paintings mit variabler Größe)
+
+    private func renderCanvasToFullCGImage(_ canvas: PixelCanvas) -> CGImage? {
+        let w = canvas.width
+        let h = canvas.height
+
+        guard let context = CGContext(
+            data: nil,
+            width: w,
+            height: h,
+            bitsPerComponent: 8,
+            bytesPerRow: w * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+
+        if !transparentBackground {
+            context.setFillColor(red: 1, green: 1, blue: 1, alpha: 1)
+            context.fill(CGRect(x: 0, y: 0, width: w, height: h))
+        }
+
+        for y in 0..<h {
+            for x in 0..<w {
+                if let color = canvas.pixel(at: x, y: y),
+                   let components = color.cgColorComponents {
+                    context.setFillColor(red: components.r,
+                                         green: components.g,
+                                         blue: components.b,
+                                         alpha: components.a)
+                    context.fill(CGRect(x: x, y: h - 1 - y, width: 1, height: 1))
+                }
+            }
+        }
+
+        return context.makeImage()
+    }
+
     // MARK: - Aufräumen
 
     func cleanup() {
