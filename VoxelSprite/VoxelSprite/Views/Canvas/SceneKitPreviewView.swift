@@ -5,7 +5,7 @@
 //  Echter 3D-Würfel mit SceneKit.
 //  Zeigt alle 6 Face-Texturen auf einem drehbaren Würfel.
 //  Pixel-Art bleibt scharf durch Nearest-Neighbor-Filtering.
-//  Optional: Pixel-Grid-Overlay auf dem Modell.
+//  Unterstützt direktes Malen auf dem 3D-Modell.
 //
 
 import SwiftUI
@@ -16,27 +16,187 @@ import SceneKit
 struct SceneKitPreviewView: View {
 
     @EnvironmentObject var blockVM: BlockViewModel
+    @EnvironmentObject var canvasVM: CanvasViewModel
 
     /// Grid auf dem 3D-Modell anzeigen
     var showGrid: Bool = false
 
+    /// Malen auf dem 3D-Modell aktivieren
+    var paintEnabled: Bool = false
+
+    @State private var scene: SCNScene = SCNScene()
+    @State private var sceneReady = false
+    @StateObject private var orbitState: OrbitCameraState = {
+        let state = OrbitCameraState()
+        state.azimuth = 0.78      // ~45°
+        state.elevation = 0.55
+        state.distance = 3.1
+        return state
+    }()
+    @State private var strokeStarted = false
+
     var body: some View {
-        BlockCubeSceneView(project: blockVM.project, showGrid: showGrid, activeFace: blockVM.activeFaceType)
-            .frame(maxWidth: .infinity)
-            .aspectRatio(1, contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(.white.opacity(0.1), lineWidth: 1)
-            )
+        Group {
+            if paintEnabled {
+                PaintableSceneView(
+                    scene: scene,
+                    onPaintHit: handlePaintHit,
+                    onPaintEnd: handlePaintEnd,
+                    orbitState: orbitState
+                )
+            } else {
+                NonPaintableBlockView(project: blockVM.project, showGrid: showGrid, activeFace: blockVM.activeFaceType)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .aspectRatio(1, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(.white.opacity(0.1), lineWidth: 1)
+        )
+        .onAppear {
+            if paintEnabled && !sceneReady {
+                setupScene()
+                sceneReady = true
+            }
+        }
+        .onChange(of: blockVM.project.name) { _ in
+            if paintEnabled { updateMaterials() }
+        }
+        .onChange(of: showGrid) { _ in
+            if paintEnabled { updateMaterials() }
+        }
+        // Materialien bei jeder Projektänderung updaten
+        .onReceive(blockVM.objectWillChange) {
+            if paintEnabled { updateMaterials() }
+        }
+    }
+
+    // MARK: - Scene Setup
+
+    private func setupScene() {
+        let bgColor: Any = {
+            #if os(macOS)
+            return NSColor(red: 0.05, green: 0.05, blue: 0.08, alpha: 1)
+            #else
+            return UIColor(red: 0.05, green: 0.05, blue: 0.08, alpha: 1)
+            #endif
+        }()
+
+        scene.background.contents = bgColor
+
+        let box = SCNBox(width: 1, height: 1, length: 1, chamferRadius: 0)
+        box.materials = Self.createMaterials(project: blockVM.project, showGrid: showGrid, activeFace: blockVM.activeFaceType)
+        let cubeNode = SCNNode(geometry: box)
+        cubeNode.name = "cube"
+        scene.rootNode.addChildNode(cubeNode)
+
+        let cameraNode = SCNNode()
+        cameraNode.camera = SCNCamera()
+        cameraNode.camera?.fieldOfView = 35
+        cameraNode.name = "camera"
+        scene.rootNode.addChildNode(cameraNode)
+        orbitState.center = SCNVector3(0, 0, 0)
+        orbitState.updateCamera(cameraNode)
+
+        let ambientNode = SCNNode()
+        ambientNode.light = SCNLight()
+        ambientNode.light?.type = .ambient
+        ambientNode.light?.intensity = 400
+        scene.rootNode.addChildNode(ambientNode)
+
+        let directionalNode = SCNNode()
+        directionalNode.light = SCNLight()
+        directionalNode.light?.type = .directional
+        directionalNode.light?.intensity = 600
+        directionalNode.position = SCNVector3(2, 4, 2)
+        directionalNode.look(at: SCNVector3(0, 0, 0))
+        scene.rootNode.addChildNode(directionalNode)
+    }
+
+    private func updateMaterials() {
+        guard let cubeNode = scene.rootNode.childNode(withName: "cube", recursively: true),
+              let box = cubeNode.geometry as? SCNBox else { return }
+        box.materials = Self.createMaterials(project: blockVM.project, showGrid: showGrid, activeFace: blockVM.activeFaceType)
+    }
+
+    // MARK: - Paint Handling
+
+    /// SCNBox Face-Index → FaceType Mapping
+    /// SCNBox: 0=+X(East), 1=-X(West), 2=+Y(Top), 3=-Y(Bottom), 4=+Z(South), 5=-Z(North)
+    private static let boxFaceToFaceType: [FaceType] = [.east, .west, .top, .bottom, .south, .north]
+
+    private func handlePaintHit(nodeName: String, faceIndex: Int, uv: CGPoint) {
+        guard nodeName == "cube",
+              faceIndex >= 0, faceIndex < Self.boxFaceToFaceType.count else { return }
+
+        let faceType = Self.boxFaceToFaceType[faceIndex]
+        let canvas = blockVM.project.canvas(for: faceType)
+
+        // UV → Pixel-Koordinaten
+        let px = Int(uv.x * CGFloat(canvas.width))
+        let py = Int((1.0 - uv.y) * CGFloat(canvas.height)) // Y ist invertiert
+        let clampedX = max(0, min(canvas.width - 1, px))
+        let clampedY = max(0, min(canvas.height - 1, py))
+
+        // Zur richtigen Face wechseln und malen
+        if blockVM.activeFaceType != faceType {
+            blockVM.selectFace(faceType)
+            canvasVM.resetUndoHistory()
+        }
+
+        if !strokeStarted {
+            canvasVM.beginStroke(at: clampedX, y: clampedY)
+            strokeStarted = true
+        } else {
+            canvasVM.continueStroke(at: clampedX, y: clampedY)
+        }
+    }
+
+    private func handlePaintEnd() {
+        if strokeStarted {
+            // Canvas-Koordinaten sind nicht mehr relevant, endStroke mit letzter Position
+            canvasVM.endStroke(at: 0, y: 0)
+            strokeStarted = false
+        }
+    }
+
+    // MARK: - Materials
+
+    static func createMaterials(project: BlockProject, showGrid: Bool, activeFace: FaceType? = nil) -> [SCNMaterial] {
+        let faceOrder: [FaceType] = [.east, .west, .top, .bottom, .south, .north]
+        return faceOrder.map { faceType in
+            let material = SCNMaterial()
+            let canvas = project.canvas(for: faceType)
+            if let image = canvas.toCGImage(showGrid: showGrid) {
+                material.diffuse.contents = image
+                material.diffuse.magnificationFilter = .nearest
+                material.diffuse.minificationFilter = .nearest
+                material.diffuse.wrapS = .clamp
+                material.diffuse.wrapT = .clamp
+            }
+            material.lightingModel = .blinn
+            material.isDoubleSided = false
+            // Aktive Seite mit Emission hervorheben
+            if let activeFace = activeFace, faceType == activeFace {
+                #if os(macOS)
+                material.emission.contents = NSColor(red: 0.0, green: 0.8, blue: 1.0, alpha: 1.0)
+                #else
+                material.emission.contents = UIColor(red: 0.0, green: 0.8, blue: 1.0, alpha: 1.0)
+                #endif
+                material.emission.intensity = 0.3
+            }
+            return material
+        }
     }
 }
 
-// MARK: - Platform-specific SCNView Wrapper
+// MARK: - Non-Paintable View (für read-only Modus)
 
 #if os(macOS)
 
-struct BlockCubeSceneView: NSViewRepresentable {
+private struct NonPaintableBlockView: NSViewRepresentable {
     let project: BlockProject
     var showGrid: Bool = false
     var activeFace: FaceType = .north
@@ -53,20 +213,17 @@ struct BlockCubeSceneView: NSViewRepresentable {
     func updateNSView(_ scnView: SCNView, context: Context) {
         guard let cubeNode = scnView.scene?.rootNode.childNode(withName: "cube", recursively: true),
               let box = cubeNode.geometry as? SCNBox else { return }
-        box.materials = Self.createMaterials(project: project, showGrid: showGrid, activeFace: activeFace)
+        box.materials = SceneKitPreviewView.createMaterials(project: project, showGrid: showGrid, activeFace: activeFace)
     }
 
     static func createScene() -> SCNScene {
         let scene = SCNScene()
         scene.background.contents = NSColor(red: 0.05, green: 0.05, blue: 0.08, alpha: 1)
-
-        // Cube
         let box = SCNBox(width: 1, height: 1, length: 1, chamferRadius: 0)
         let cubeNode = SCNNode(geometry: box)
         cubeNode.name = "cube"
         scene.rootNode.addChildNode(cubeNode)
 
-        // Camera
         let cameraNode = SCNNode()
         cameraNode.camera = SCNCamera()
         cameraNode.camera?.fieldOfView = 35
@@ -75,58 +232,27 @@ struct BlockCubeSceneView: NSViewRepresentable {
         cameraNode.name = "camera"
         scene.rootNode.addChildNode(cameraNode)
 
-        // Ambient Light
         let ambientNode = SCNNode()
         ambientNode.light = SCNLight()
         ambientNode.light?.type = .ambient
         ambientNode.light?.intensity = 400
-        ambientNode.light?.color = NSColor(red: 1, green: 1, blue: 1, alpha: 1)
         scene.rootNode.addChildNode(ambientNode)
 
-        // Directional Light
         let directionalNode = SCNNode()
         directionalNode.light = SCNLight()
         directionalNode.light?.type = .directional
         directionalNode.light?.intensity = 600
-        directionalNode.light?.color = NSColor(red: 1, green: 1, blue: 1, alpha: 1)
         directionalNode.position = SCNVector3(2, 4, 2)
         directionalNode.look(at: SCNVector3(0, 0, 0))
         scene.rootNode.addChildNode(directionalNode)
 
         return scene
     }
-
-    /// Erzeugt 6 Materials für die Würfelflächen.
-    /// SCNBox Reihenfolge: +X(East), -X(West), +Y(Top), -Y(Bottom), +Z(North), -Z(South)
-    static func createMaterials(project: BlockProject, showGrid: Bool, activeFace: FaceType = .north) -> [SCNMaterial] {
-        let faceOrder: [FaceType] = [.east, .west, .top, .bottom, .north, .south]
-        // Highlight-Farbe für aktive Seite (Cyan-Leuchten)
-        let highlightColor = NSColor(red: 0.0, green: 0.8, blue: 1.0, alpha: 1.0)
-        return faceOrder.map { faceType in
-            let material = SCNMaterial()
-            let canvas = project.canvas(for: faceType)
-            if let image = canvas.toCGImage(showGrid: showGrid) {
-                material.diffuse.contents = image
-                material.diffuse.magnificationFilter = .nearest
-                material.diffuse.minificationFilter = .nearest
-                material.diffuse.wrapS = .clamp
-                material.diffuse.wrapT = .clamp
-            }
-            material.lightingModel = .blinn
-            material.isDoubleSided = false
-            // Aktive Seite mit Emission hervorheben
-            if faceType == activeFace {
-                material.emission.contents = highlightColor
-                material.emission.intensity = 0.3
-            }
-            return material
-        }
-    }
 }
 
 #elseif os(iOS)
 
-struct BlockCubeSceneView: UIViewRepresentable {
+private struct NonPaintableBlockView: UIViewRepresentable {
     let project: BlockProject
     var showGrid: Bool = false
     var activeFace: FaceType = .north
@@ -143,13 +269,12 @@ struct BlockCubeSceneView: UIViewRepresentable {
     func updateUIView(_ scnView: SCNView, context: Context) {
         guard let cubeNode = scnView.scene?.rootNode.childNode(withName: "cube", recursively: true),
               let box = cubeNode.geometry as? SCNBox else { return }
-        box.materials = Self.createMaterials(project: project, showGrid: showGrid, activeFace: activeFace)
+        box.materials = SceneKitPreviewView.createMaterials(project: project, showGrid: showGrid, activeFace: activeFace)
     }
 
     static func createScene() -> SCNScene {
         let scene = SCNScene()
         scene.background.contents = UIColor(red: 0.05, green: 0.05, blue: 0.08, alpha: 1)
-
         let box = SCNBox(width: 1, height: 1, length: 1, chamferRadius: 0)
         let cubeNode = SCNNode(geometry: box)
         cubeNode.name = "cube"
@@ -178,29 +303,6 @@ struct BlockCubeSceneView: UIViewRepresentable {
         scene.rootNode.addChildNode(directionalNode)
 
         return scene
-    }
-
-    static func createMaterials(project: BlockProject, showGrid: Bool, activeFace: FaceType = .north) -> [SCNMaterial] {
-        let faceOrder: [FaceType] = [.east, .west, .top, .bottom, .north, .south]
-        let highlightColor = UIColor(red: 0.0, green: 0.8, blue: 1.0, alpha: 1.0)
-        return faceOrder.map { faceType in
-            let material = SCNMaterial()
-            let canvas = project.canvas(for: faceType)
-            if let image = canvas.toCGImage(showGrid: showGrid) {
-                material.diffuse.contents = image
-                material.diffuse.magnificationFilter = .nearest
-                material.diffuse.minificationFilter = .nearest
-                material.diffuse.wrapS = .clamp
-                material.diffuse.wrapT = .clamp
-            }
-            material.lightingModel = .blinn
-            material.isDoubleSided = false
-            if faceType == activeFace {
-                material.emission.contents = highlightColor
-                material.emission.intensity = 0.3
-            }
-            return material
-        }
     }
 }
 

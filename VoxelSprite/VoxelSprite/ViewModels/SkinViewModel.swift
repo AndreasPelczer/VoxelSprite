@@ -2,7 +2,7 @@
 //  SkinViewModel.swift
 //  VoxelSprite
 //
-//  Verwaltet das Skin-Projekt (Steve/Alex).
+//  Verwaltet das Skin-Projekt (Andy/Alex).
 //  Zuständig für: aktives Körperteil, Face, Layer,
 //  Canvas-Extraktion und -Rückschreibung.
 //

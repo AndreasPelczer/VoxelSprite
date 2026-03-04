@@ -2,7 +2,7 @@
 //  SkinProject.swift
 //  VoxelSprite
 //
-//  Datenmodell für Minecraft Steve-Skins.
+//  Datenmodell für Minecraft Andy-Skins.
 //  64×64 Pixel Texture Atlas mit UV-Mapping für Körperteile.
 //  Zwei Layer: Base + Overlay (Helm, Jacke, etc.)
 //
@@ -154,7 +154,7 @@ struct SkinProject {
     /// Overlay Layer: Helm, Jacke, etc. (64×64)
     var overlayLayer: PixelCanvas
 
-    init(name: String = "steve") {
+    init(name: String = "andy") {
         self.name = name
         self.baseLayer = PixelCanvas(width: 64, height: 64)
         self.overlayLayer = PixelCanvas(width: 64, height: 64)
