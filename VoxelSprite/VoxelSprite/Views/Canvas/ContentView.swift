@@ -3,7 +3,7 @@
 //  VoxelSprite
 //
 //  Root View der App.
-//  Links: Canvas mit Tools + Farbpalette
+//  Links: Canvas mit Tools + Farbpalette + Animation-Timeline
 //  Rechts: Vollhöhe-Sidebar mit Modus-Umschaltung, Selektoren, 3D-Vorschau, Export
 //
 
@@ -132,6 +132,11 @@ struct ContentView: View {
                     PixelCanvasView()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                // Animation Timeline (nur im Block-Modus)
+                if canvasVM.editorMode == .block {
+                    AnimationTimelineView()
+                }
 
                 ColorPaletteView()
             }
@@ -273,6 +278,22 @@ struct ContentView: View {
 
         Divider()
 
+        // MARK: - Rotation
+        rotationSection
+
+        Divider()
+
+        // MARK: - CTM
+        ctmSection
+
+        Divider()
+
+        // MARK: - Animation Settings (wenn Face animiert)
+        if blockVM.activeFace.isAnimated && blockVM.project.ctmMethod == .none {
+            animationSettingsSection
+            Divider()
+        }
+
         // 3D Vorschau (SceneKit)
         HStack {
             sectionHeader("3D VORSCHAU")
@@ -298,6 +319,155 @@ struct ContentView: View {
 
         if showTilePreview {
             TilePreviewView(faceType: blockVM.activeFaceType)
+        }
+    }
+
+    // MARK: - Rotation Section
+
+    private var rotationSection: some View {
+        VStack(spacing: 8) {
+            sectionHeader("ROTATION")
+
+            HStack(spacing: 4) {
+                ForEach(BlockRotation.allCases) { rotation in
+                    Button {
+                        blockVM.project.rotation = rotation
+                    } label: {
+                        VStack(spacing: 3) {
+                            Image(systemName: rotation.iconName)
+                                .font(.system(size: 12))
+                            Text(rotation.rawValue)
+                                .font(.system(size: 7, weight: .medium))
+                                .lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .tint(blockVM.project.rotation == rotation ? accentTeal : nil)
+                }
+            }
+
+            if blockVM.project.rotation != .none {
+                Text(blockVM.project.rotation.description)
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    // MARK: - CTM Section
+
+    private var ctmSection: some View {
+        VStack(spacing: 8) {
+            sectionHeader("CONNECTED TEXTURES")
+
+            HStack(spacing: 4) {
+                ForEach(CTMMethod.allCases) { method in
+                    Button {
+                        blockVM.project.ctmMethod = method
+                    } label: {
+                        VStack(spacing: 3) {
+                            Image(systemName: method.iconName)
+                                .font(.system(size: 12))
+                            Text(method.rawValue)
+                                .font(.system(size: 8, weight: .medium))
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .tint(blockVM.project.ctmMethod == method ? accentTeal : nil)
+                }
+            }
+
+            if blockVM.project.ctmMethod != .none {
+                Text(blockVM.project.ctmMethod.description)
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+
+                // CTM Repeat Dimensionen
+                if blockVM.project.ctmMethod == .repeat_ {
+                    HStack(spacing: 8) {
+                        HStack(spacing: 4) {
+                            Text("W:")
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                            Stepper(value: $blockVM.project.ctmRepeatWidth, in: 1...8) {
+                                Text("\(blockVM.project.ctmRepeatWidth)")
+                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(accentTeal)
+                            }
+                            .controlSize(.mini)
+                        }
+                        HStack(spacing: 4) {
+                            Text("H:")
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                            Stepper(value: $blockVM.project.ctmRepeatHeight, in: 1...8) {
+                                Text("\(blockVM.project.ctmRepeatHeight)")
+                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(accentTeal)
+                            }
+                            .controlSize(.mini)
+                        }
+                    }
+                }
+
+                // Info: Frames werden als Tiles/Varianten verwendet
+                HStack(spacing: 4) {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 9))
+                    Text(blockVM.project.ctmMethod == .random
+                         ? "Frames = Zufällige Varianten"
+                         : "Frames = Tiles im \(blockVM.project.ctmRepeatWidth)×\(blockVM.project.ctmRepeatHeight) Muster")
+                        .font(.system(size: 9, design: .monospaced))
+                }
+                .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    // MARK: - Animation Settings
+
+    private var animationSettingsSection: some View {
+        VStack(spacing: 8) {
+            sectionHeader("ANIMATION")
+
+            // Frame Time
+            HStack {
+                Text("Frame-Zeit:")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Stepper(
+                    value: Binding(
+                        get: { blockVM.activeFace.frameTime },
+                        set: { blockVM.project.faces[blockVM.activeFaceType]?.frameTime = $0 }
+                    ),
+                    in: 1...100
+                ) {
+                    Text("\(blockVM.activeFace.frameTime) Ticks")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundStyle(accentTeal)
+                }
+                .controlSize(.mini)
+            }
+
+            // Geschwindigkeit Info
+            let seconds = Double(blockVM.activeFace.frameTime) / 20.0
+            Text(String(format: "%.2f Sek./Frame · %.1f FPS", seconds, 1.0 / seconds))
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundStyle(.tertiary)
+
+            // Interpolation
+            Toggle("Interpolation", isOn: Binding(
+                get: { blockVM.activeFace.interpolate },
+                set: { blockVM.project.faces[blockVM.activeFaceType]?.interpolate = $0 }
+            ))
+            .font(.system(size: 11, weight: .medium))
+            .toggleStyle(.switch)
+            .controlSize(.small)
         }
     }
 
@@ -399,6 +569,9 @@ struct ContentView: View {
                 .toggleStyle(.switch)
                 .controlSize(.small)
 
+            // Export-Info
+            exportInfoBadges
+
             // Export-Fortschritt
             if exportVM.isExporting {
                 VStack(spacing: 4) {
@@ -447,6 +620,45 @@ struct ContentView: View {
             RoundedRectangle(cornerRadius: 10)
                 .stroke(accentTeal.opacity(0.15), lineWidth: 1)
         )
+    }
+
+    // MARK: - Export Info Badges
+
+    @ViewBuilder
+    private var exportInfoBadges: some View {
+        let hasAnimation = blockVM.project.hasAnimatedFaces && blockVM.project.ctmMethod == .none
+        let hasRotation = blockVM.project.rotation != .none
+        let hasCTM = blockVM.project.ctmMethod != .none
+
+        if hasAnimation || hasRotation || hasCTM {
+            HStack(spacing: 4) {
+                if hasAnimation {
+                    exportBadge("Animiert", icon: "film", color: .orange)
+                }
+                if hasRotation {
+                    exportBadge(blockVM.project.rotation.rawValue, icon: blockVM.project.rotation.iconName, color: .purple)
+                }
+                if hasCTM {
+                    exportBadge("CTM \(blockVM.project.ctmMethod.rawValue)", icon: blockVM.project.ctmMethod.iconName, color: .green)
+                }
+            }
+        }
+    }
+
+    private func exportBadge(_ text: String, icon: String, color: Color) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.system(size: 8))
+            Text(text)
+                .font(.system(size: 8, weight: .bold))
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(
+            RoundedRectangle(cornerRadius: 4)
+                .fill(color.opacity(0.15))
+        )
+        .foregroundStyle(color)
     }
 
     // MARK: - Skin Export Card

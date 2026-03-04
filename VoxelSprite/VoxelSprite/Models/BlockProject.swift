@@ -4,6 +4,7 @@
 //
 //  Ein Projekt = ein Minecraft-Block mit 6 Faces.
 //  Hält alle Faces und die Block-Einstellungen.
+//  Unterstützt: Rotation-Varianten, Connected Textures (CTM), Animation.
 //
 
 import SwiftUI
@@ -44,6 +45,65 @@ enum BlockTemplate: String, CaseIterable, Identifiable, Codable {
     }
 }
 
+// MARK: - Block Rotation
+
+/// Rotation-Varianten für den Blockstate-Export.
+/// Bestimmt wie der Block im Spiel gedreht platziert wird.
+enum BlockRotation: String, CaseIterable, Identifiable, Codable {
+    case none        = "Keine"
+    case directional = "4-Richtungen"
+    case sixWay      = "6-Richtungen"
+    case random      = "Zufällig"
+
+    var id: String { rawValue }
+
+    var iconName: String {
+        switch self {
+        case .none:        return "square"
+        case .directional: return "arrow.triangle.2.circlepath"
+        case .sixWay:      return "arrow.3.trianglepath"
+        case .random:      return "dice"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .none:        return "Keine Rotation"
+        case .directional: return "N/E/S/W (Ofen, Truhe)"
+        case .sixWay:      return "Alle 6 (Beobachter)"
+        case .random:      return "Zufällig (Stein)"
+        }
+    }
+}
+
+// MARK: - CTM Method
+
+/// Connected Textures Methode.
+/// Bestimmt wie Texturen mit Nachbarblöcken verbunden werden.
+enum CTMMethod: String, CaseIterable, Identifiable, Codable {
+    case none    = "Keine"
+    case random  = "Random"
+    case repeat_ = "Repeat"
+
+    var id: String { rawValue }
+
+    var iconName: String {
+        switch self {
+        case .none:    return "square"
+        case .random:  return "dice"
+        case .repeat_: return "square.grid.2x2"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .none:    return "Keine CTM"
+        case .random:  return "Zufällige Varianten"
+        case .repeat_: return "Wiederholendes Muster"
+        }
+    }
+}
+
 // MARK: - Block Project
 
 /// Das komplette Block-Projekt.
@@ -72,6 +132,18 @@ struct BlockProject {
     /// Ziel-Version
     var targetVersion: TargetVersion
 
+    /// Rotation-Varianten für Blockstate
+    var rotation: BlockRotation
+
+    /// Connected Textures Methode
+    var ctmMethod: CTMMethod
+
+    /// Repeat-Breite für CTM Repeat (Anzahl Tiles horizontal)
+    var ctmRepeatWidth: Int
+
+    /// Repeat-Höhe für CTM Repeat (Anzahl Tiles vertikal)
+    var ctmRepeatHeight: Int
+
     // MARK: - Target Version
 
     enum TargetVersion: String, CaseIterable, Identifiable, Codable {
@@ -96,13 +168,21 @@ struct BlockProject {
         gridSize: Int = 16,
         template: BlockTemplate = .custom,
         namespace: String = "minecraft",
-        targetVersion: TargetVersion = .java
+        targetVersion: TargetVersion = .java,
+        rotation: BlockRotation = .none,
+        ctmMethod: CTMMethod = .none,
+        ctmRepeatWidth: Int = 2,
+        ctmRepeatHeight: Int = 2
     ) {
         self.name = name
         self.gridSize = gridSize
         self.template = template
         self.namespace = namespace
         self.targetVersion = targetVersion
+        self.rotation = rotation
+        self.ctmMethod = ctmMethod
+        self.ctmRepeatWidth = ctmRepeatWidth
+        self.ctmRepeatHeight = ctmRepeatHeight
 
         // Alle 6 Faces initialisieren
         var facesDict: [FaceType: BlockFace] = [:]
@@ -119,12 +199,12 @@ struct BlockProject {
         faces[type] ?? BlockFace(type: type, gridSize: gridSize)
     }
 
-    /// Canvas eines bestimmten Faces
+    /// Canvas eines bestimmten Faces (erster Frame)
     func canvas(for type: FaceType) -> PixelCanvas {
         face(for: type).canvas
     }
 
-    /// Aktualisiert das Canvas eines Faces
+    /// Aktualisiert das Canvas eines Faces (erster Frame)
     mutating func updateCanvas(for type: FaceType, canvas: PixelCanvas) {
         faces[type]?.canvas = canvas
     }
@@ -167,6 +247,13 @@ struct BlockProject {
         for face in linkedFaces {
             faces[face]?.canvas = sourceCanvas
         }
+    }
+
+    // MARK: - Animation Helpers
+
+    /// Hat irgendein Face eine Animation?
+    var hasAnimatedFaces: Bool {
+        faces.values.contains(where: { $0.isAnimated })
     }
 
     // MARK: - Geordnete Faces

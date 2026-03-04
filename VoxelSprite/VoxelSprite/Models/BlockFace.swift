@@ -3,7 +3,8 @@
 //  VoxelSprite
 //
 //  Die 6 Seiten eines Minecraft-Blocks.
-//  Jede Seite hat ein eigenes 16×16 PixelCanvas.
+//  Jede Seite hat mehrere Frames (für Animation).
+//  Frame 0 ist die Standard-Textur, weitere Frames für Animationen.
 //
 
 import SwiftUI
@@ -61,21 +62,40 @@ enum FaceType: String, CaseIterable, Identifiable, Codable {
 
 // MARK: - Block Face
 
-/// Eine einzelne Seite des Blocks mit eigenem Canvas.
+/// Eine einzelne Seite des Blocks mit mehreren Frames.
 struct BlockFace: Identifiable {
     let id: UUID
     let type: FaceType
-    var canvas: PixelCanvas
+    var frames: [PixelCanvas]
+
+    // Animation settings
+    var frameTime: Int = 2          // Ticks pro Frame (20 Ticks = 1 Sekunde)
+    var interpolate: Bool = false   // Smooth interpolation zwischen Frames
+
+    /// Abwärtskompatibel: Canvas des ersten Frames
+    var canvas: PixelCanvas {
+        get { frames.first ?? PixelCanvas(gridSize: 16) }
+        set {
+            if frames.isEmpty { frames = [newValue] }
+            else { frames[0] = newValue }
+        }
+    }
+
+    /// Hat dieser Face mehrere Frames (Animation/CTM)?
+    var isAnimated: Bool { frames.count > 1 }
+
+    /// Anzahl der Frames
+    var frameCount: Int { frames.count }
 
     init(type: FaceType, gridSize: Int = 16) {
         self.id = UUID()
         self.type = type
-        self.canvas = PixelCanvas(gridSize: gridSize)
+        self.frames = [PixelCanvas(gridSize: gridSize)]
     }
 
     init(type: FaceType, canvas: PixelCanvas) {
         self.id = UUID()
         self.type = type
-        self.canvas = canvas
+        self.frames = [canvas]
     }
 }
