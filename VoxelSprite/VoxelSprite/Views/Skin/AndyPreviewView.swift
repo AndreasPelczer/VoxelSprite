@@ -5,6 +5,7 @@
 //  3D-Vorschau von Andy/Alex mit SceneKit.
 //  Baut den Charakter aus 6 Box-Geometrien (Kopf, Körper, Arme, Beine).
 //  Base + Overlay Layer werden als Texturen angewendet.
+//  Unterstützt direktes Malen auf dem 3D-Modell.
 //
 
 import SwiftUI
@@ -13,19 +14,207 @@ import SceneKit
 struct AndyPreviewView: View {
 
     @EnvironmentObject var skinVM: SkinViewModel
+    @EnvironmentObject var canvasVM: CanvasViewModel
 
     /// Grid auf dem 3D-Modell anzeigen
     var showGrid: Bool = false
 
+    /// Malen auf dem 3D-Modell aktivieren
+    var paintEnabled: Bool = false
+
+    @State private var scene: SCNScene = SCNScene()
+    @State private var sceneReady = false
+    @StateObject private var orbitState: OrbitCameraState = {
+        let state = OrbitCameraState()
+        state.azimuth = 0.5
+        state.elevation = 0.35
+        state.distance = 6.5
+        state.center = SCNVector3(0, 1.8, 0)
+        return state
+    }()
+    @State private var strokeStarted = false
+
     var body: some View {
-        AndySceneView(project: skinVM.project, showGrid: showGrid)
-            .frame(maxWidth: .infinity)
-            .aspectRatio(0.7, contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(.white.opacity(0.1), lineWidth: 1)
+        Group {
+            if paintEnabled {
+                PaintableSceneView(
+                    scene: scene,
+                    onPaintHit: handlePaintHit,
+                    onPaintEnd: handlePaintEnd,
+                    orbitState: orbitState
+                )
+            } else {
+                NonPaintableAndyView(project: skinVM.project, showGrid: showGrid)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 300)
+        .aspectRatio(0.85, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(.white.opacity(0.1), lineWidth: 1)
+        )
+        .onAppear {
+            if paintEnabled && !sceneReady {
+                setupScene()
+                sceneReady = true
+            }
+        }
+        .onReceive(skinVM.objectWillChange) {
+            if paintEnabled { updateMaterials() }
+        }
+        .onChange(of: showGrid) { _ in
+            if paintEnabled { updateMaterials() }
+        }
+    }
+
+    // MARK: - Scene Setup
+
+    private func setupScene() {
+        let bgColor: Any = {
+            #if os(macOS)
+            return NSColor(red: 0.05, green: 0.05, blue: 0.08, alpha: 1)
+            #else
+            return UIColor(red: 0.05, green: 0.05, blue: 0.08, alpha: 1)
+            #endif
+        }()
+        scene.background.contents = bgColor
+
+        for part in andyParts {
+            let box = SCNBox(
+                width: CGFloat(part.scnSize.x),
+                height: CGFloat(part.scnSize.y),
+                length: CGFloat(part.scnSize.z),
+                chamferRadius: 0
             )
+            box.materials = Self.materialsForPart(part.bodyPart, project: skinVM.project, showGrid: showGrid)
+            let node = SCNNode(geometry: box)
+            node.name = part.name
+            node.position = part.position
+            scene.rootNode.addChildNode(node)
+        }
+
+        let cameraNode = SCNNode()
+        cameraNode.camera = SCNCamera()
+        cameraNode.camera?.fieldOfView = 35
+        cameraNode.name = "camera"
+        scene.rootNode.addChildNode(cameraNode)
+        orbitState.updateCamera(cameraNode)
+
+        let ambientNode = SCNNode()
+        ambientNode.light = SCNLight()
+        ambientNode.light?.type = .ambient
+        ambientNode.light?.intensity = 500
+        scene.rootNode.addChildNode(ambientNode)
+
+        let dirNode = SCNNode()
+        dirNode.light = SCNLight()
+        dirNode.light?.type = .directional
+        dirNode.light?.intensity = 500
+        dirNode.position = SCNVector3(3, 5, 3)
+        dirNode.look(at: SCNVector3(0, 2, 0))
+        scene.rootNode.addChildNode(dirNode)
+    }
+
+    private func updateMaterials() {
+        for part in andyParts {
+            if let node = scene.rootNode.childNode(withName: part.name, recursively: true),
+               let box = node.geometry as? SCNBox {
+                box.materials = Self.materialsForPart(part.bodyPart, project: skinVM.project, showGrid: showGrid)
+            }
+        }
+    }
+
+    // MARK: - Paint Handling
+
+    /// SCNBox Face-Index → SkinFace Mapping
+    /// SCNBox: 0=+X(Right), 1=-X(Left), 2=+Y(Top), 3=-Y(Bottom), 4=+Z(Front), 5=-Z(Back)
+    private static let boxFaceToSkinFace: [SkinFace] = [.right, .left, .top, .bottom, .front, .back]
+
+    /// Node-Name → SkinBodyPart Mapping
+    private static let nodeNameToBodyPart: [String: SkinBodyPart] = [
+        "head": .head, "body": .body,
+        "rightArm": .rightArm, "leftArm": .leftArm,
+        "rightLeg": .rightLeg, "leftLeg": .leftLeg
+    ]
+
+    private func handlePaintHit(nodeName: String, faceIndex: Int, uv: CGPoint) {
+        guard let bodyPart = Self.nodeNameToBodyPart[nodeName],
+              faceIndex >= 0, faceIndex < Self.boxFaceToSkinFace.count else { return }
+
+        let face = Self.boxFaceToSkinFace[faceIndex]
+
+        // Zur richtigen Auswahl wechseln
+        if skinVM.activeBodyPart != bodyPart {
+            skinVM.selectBodyPart(bodyPart)
+            canvasVM.resetUndoHistory()
+        }
+        if skinVM.activeFace != face {
+            skinVM.selectFace(face)
+            canvasVM.resetUndoHistory()
+        }
+
+        let canvas = skinVM.activeCanvas
+
+        // UV → Pixel
+        let px = Int(uv.x * CGFloat(canvas.width))
+        let py = Int((1.0 - uv.y) * CGFloat(canvas.height))
+        let clampedX = max(0, min(canvas.width - 1, px))
+        let clampedY = max(0, min(canvas.height - 1, py))
+
+        if !strokeStarted {
+            canvasVM.beginStroke(at: clampedX, y: clampedY)
+            strokeStarted = true
+        } else {
+            canvasVM.continueStroke(at: clampedX, y: clampedY)
+        }
+    }
+
+    private func handlePaintEnd() {
+        if strokeStarted {
+            canvasVM.endStroke(at: 0, y: 0)
+            strokeStarted = false
+        }
+    }
+
+    // MARK: - Materials
+
+    static func materialsForPart(_ bodyPart: SkinBodyPart, project: SkinProject, showGrid: Bool = false) -> [SCNMaterial] {
+        let faceOrder: [SkinFace] = [.right, .left, .top, .bottom, .front, .back]
+        return faceOrder.map { face in
+            let material = SCNMaterial()
+            let baseCanvas = project.extractRegion(bodyPart: bodyPart, face: face, layer: .base)
+            if let baseImage = baseCanvas.toCGImage(showGrid: showGrid) {
+                let overlayCanvas = project.extractRegion(bodyPart: bodyPart, face: face, layer: .overlay)
+                if let overlayImage = overlayCanvas.toCGImage(showGrid: showGrid) {
+                    let composited = Self.compositeImages(base: baseImage, overlay: overlayImage,
+                                                          width: baseCanvas.width, height: baseCanvas.height)
+                    material.diffuse.contents = composited ?? baseImage
+                } else {
+                    material.diffuse.contents = baseImage
+                }
+            }
+            material.diffuse.magnificationFilter = .nearest
+            material.diffuse.minificationFilter = .nearest
+            material.diffuse.wrapS = .clamp
+            material.diffuse.wrapT = .clamp
+            material.lightingModel = .blinn
+            material.isDoubleSided = false
+            return material
+        }
+    }
+
+    static func compositeImages(base: CGImage, overlay: CGImage, width: Int, height: Int) -> CGImage? {
+        guard let ctx = CGContext(
+            data: nil, width: width, height: height,
+            bitsPerComponent: 8, bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        let rect = CGRect(x: 0, y: 0, width: width, height: height)
+        ctx.draw(base, in: rect)
+        ctx.draw(overlay, in: rect)
+        return ctx.makeImage()
     }
 }
 
@@ -33,32 +222,25 @@ struct AndyPreviewView: View {
 
 private struct AndyPartDef {
     let bodyPart: SkinBodyPart
-    let scnSize: SCNVector3      // SceneKit Box Dimensions
-    let position: SCNVector3     // Center position
+    let scnSize: SCNVector3
+    let position: SCNVector3
     let name: String
 }
 
-/// Andy Proportionen (normalisiert: 1 Unit = 8 Pixel, Andy ~4 Units hoch)
 private let andyParts: [AndyPartDef] = [
-    // Kopf: 8×8×8 → 1×1×1, Mitte bei y=3.5 (top=4, bottom=3)
     AndyPartDef(bodyPart: .head, scnSize: SCNVector3(1, 1, 1), position: SCNVector3(0, 3.25, 0), name: "head"),
-    // Körper: 8×12×4 → 1×1.5×0.5, Mitte bei y=2 (top=2.75, bottom=1.25)
     AndyPartDef(bodyPart: .body, scnSize: SCNVector3(1, 1.5, 0.5), position: SCNVector3(0, 2, 0), name: "body"),
-    // R. Arm: 4×12×4 → 0.5×1.5×0.5, rechts vom Körper
     AndyPartDef(bodyPart: .rightArm, scnSize: SCNVector3(0.5, 1.5, 0.5), position: SCNVector3(0.75, 2, 0), name: "rightArm"),
-    // L. Arm: 4×12×4 → 0.5×1.5×0.5, links vom Körper
     AndyPartDef(bodyPart: .leftArm, scnSize: SCNVector3(0.5, 1.5, 0.5), position: SCNVector3(-0.75, 2, 0), name: "leftArm"),
-    // R. Bein: 4×12×4 → 0.5×1.5×0.5, rechte Hälfte unten
     AndyPartDef(bodyPart: .rightLeg, scnSize: SCNVector3(0.5, 1.5, 0.5), position: SCNVector3(0.25, 0.5, 0), name: "rightLeg"),
-    // L. Bein: 4×12×4 → 0.5×1.5×0.5, linke Hälfte unten
     AndyPartDef(bodyPart: .leftLeg, scnSize: SCNVector3(0.5, 1.5, 0.5), position: SCNVector3(-0.25, 0.5, 0), name: "leftLeg"),
 ]
 
-// MARK: - Platform SCNView Wrapper
+// MARK: - Non-Paintable Andy View
 
 #if os(macOS)
 
-struct AndySceneView: NSViewRepresentable {
+private struct NonPaintableAndyView: NSViewRepresentable {
     let project: SkinProject
     var showGrid: Bool = false
 
@@ -72,14 +254,18 @@ struct AndySceneView: NSViewRepresentable {
     }
 
     func updateNSView(_ scnView: SCNView, context: Context) {
-        Self.updateMaterials(scene: scnView.scene, project: project, showGrid: showGrid)
+        for part in andyParts {
+            if let node = scnView.scene?.rootNode.childNode(withName: part.name, recursively: true),
+               let box = node.geometry as? SCNBox {
+                box.materials = AndyPreviewView.materialsForPart(part.bodyPart, project: project, showGrid: showGrid)
+            }
+        }
     }
 
     static func createScene(project: SkinProject, showGrid: Bool) -> SCNScene {
         let scene = SCNScene()
         scene.background.contents = NSColor(red: 0.05, green: 0.05, blue: 0.08, alpha: 1)
 
-        // Andy Körperteile erstellen
         for part in andyParts {
             let box = SCNBox(
                 width: CGFloat(part.scnSize.x),
@@ -87,24 +273,21 @@ struct AndySceneView: NSViewRepresentable {
                 length: CGFloat(part.scnSize.z),
                 chamferRadius: 0
             )
-            box.materials = Self.materialsForPart(part.bodyPart, project: project, showGrid: showGrid)
-
+            box.materials = AndyPreviewView.materialsForPart(part.bodyPart, project: project, showGrid: showGrid)
             let node = SCNNode(geometry: box)
             node.name = part.name
             node.position = part.position
             scene.rootNode.addChildNode(node)
         }
 
-        // Camera
         let cameraNode = SCNNode()
         cameraNode.camera = SCNCamera()
-        cameraNode.camera?.fieldOfView = 30
-        cameraNode.position = SCNVector3(3, 2.5, 5)
-        cameraNode.look(at: SCNVector3(0, 2, 0))
+        cameraNode.camera?.fieldOfView = 35
+        cameraNode.position = SCNVector3(3.5, 2.5, 5.5)
+        cameraNode.look(at: SCNVector3(0, 1.8, 0))
         cameraNode.name = "camera"
         scene.rootNode.addChildNode(cameraNode)
 
-        // Ambient Light
         let ambientNode = SCNNode()
         ambientNode.light = SCNLight()
         ambientNode.light?.type = .ambient
@@ -112,7 +295,6 @@ struct AndySceneView: NSViewRepresentable {
         ambientNode.light?.color = NSColor.white
         scene.rootNode.addChildNode(ambientNode)
 
-        // Directional
         let dirNode = SCNNode()
         dirNode.light = SCNLight()
         dirNode.light?.type = .directional
@@ -124,74 +306,11 @@ struct AndySceneView: NSViewRepresentable {
 
         return scene
     }
-
-    static func updateMaterials(scene: SCNScene?, project: SkinProject, showGrid: Bool) {
-        guard let scene = scene else { return }
-        for part in andyParts {
-            if let node = scene.rootNode.childNode(withName: part.name, recursively: true),
-               let box = node.geometry as? SCNBox {
-                box.materials = materialsForPart(part.bodyPart, project: project, showGrid: showGrid)
-            }
-        }
-    }
-
-    /// Erzeugt 6 Materials für ein Körperteil.
-    /// SCNBox Reihenfolge: +X(Right), -X(Left), +Y(Top), -Y(Bottom), +Z(Front), -Z(Back)
-    static func materialsForPart(_ bodyPart: SkinBodyPart, project: SkinProject, showGrid: Bool = false) -> [SCNMaterial] {
-        // SCNBox face order: +X, -X, +Y, -Y, +Z, -Z
-        // Mapped to SkinFace: right, left, top, bottom, front, back
-        let faceOrder: [SkinFace] = [.right, .left, .top, .bottom, .front, .back]
-
-        return faceOrder.map { face in
-            let material = SCNMaterial()
-
-            // Base Layer Textur
-            let baseCanvas = project.extractRegion(bodyPart: bodyPart, face: face, layer: .base)
-            if let baseImage = baseCanvas.toCGImage(showGrid: showGrid) {
-                // Compositing: Base + Overlay
-                let overlayCanvas = project.extractRegion(bodyPart: bodyPart, face: face, layer: .overlay)
-                if let overlayImage = overlayCanvas.toCGImage(showGrid: showGrid) {
-                    // Composite both layers
-                    let composited = compositeImages(base: baseImage, overlay: overlayImage,
-                                                      width: baseCanvas.width, height: baseCanvas.height)
-                    material.diffuse.contents = composited ?? baseImage
-                } else {
-                    material.diffuse.contents = baseImage
-                }
-            }
-
-            material.diffuse.magnificationFilter = .nearest
-            material.diffuse.minificationFilter = .nearest
-            material.diffuse.wrapS = .clamp
-            material.diffuse.wrapT = .clamp
-            material.lightingModel = .blinn
-            material.isDoubleSided = false
-            return material
-        }
-    }
-
-    /// Compositet zwei CGImages (Base + Overlay)
-    static func compositeImages(base: CGImage, overlay: CGImage, width: Int, height: Int) -> CGImage? {
-        guard let ctx = CGContext(
-            data: nil,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: width * 4,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else { return nil }
-
-        let rect = CGRect(x: 0, y: 0, width: width, height: height)
-        ctx.draw(base, in: rect)
-        ctx.draw(overlay, in: rect)
-        return ctx.makeImage()
-    }
 }
 
 #elseif os(iOS)
 
-struct AndySceneView: UIViewRepresentable {
+private struct NonPaintableAndyView: UIViewRepresentable {
     let project: SkinProject
     var showGrid: Bool = false
 
@@ -205,7 +324,12 @@ struct AndySceneView: UIViewRepresentable {
     }
 
     func updateUIView(_ scnView: SCNView, context: Context) {
-        Self.updateMaterials(scene: scnView.scene, project: project, showGrid: showGrid)
+        for part in andyParts {
+            if let node = scnView.scene?.rootNode.childNode(withName: part.name, recursively: true),
+               let box = node.geometry as? SCNBox {
+                box.materials = AndyPreviewView.materialsForPart(part.bodyPart, project: project, showGrid: showGrid)
+            }
+        }
     }
 
     static func createScene(project: SkinProject, showGrid: Bool) -> SCNScene {
@@ -219,7 +343,7 @@ struct AndySceneView: UIViewRepresentable {
                 length: CGFloat(part.scnSize.z),
                 chamferRadius: 0
             )
-            box.materials = Self.materialsForPart(part.bodyPart, project: project, showGrid: showGrid)
+            box.materials = AndyPreviewView.materialsForPart(part.bodyPart, project: project, showGrid: showGrid)
             let node = SCNNode(geometry: box)
             node.name = part.name
             node.position = part.position
@@ -228,9 +352,9 @@ struct AndySceneView: UIViewRepresentable {
 
         let cameraNode = SCNNode()
         cameraNode.camera = SCNCamera()
-        cameraNode.camera?.fieldOfView = 30
-        cameraNode.position = SCNVector3(3, 2.5, 5)
-        cameraNode.look(at: SCNVector3(0, 2, 0))
+        cameraNode.camera?.fieldOfView = 35
+        cameraNode.position = SCNVector3(3.5, 2.5, 5.5)
+        cameraNode.look(at: SCNVector3(0, 1.8, 0))
         scene.rootNode.addChildNode(cameraNode)
 
         let ambientNode = SCNNode()
@@ -248,31 +372,6 @@ struct AndySceneView: UIViewRepresentable {
         scene.rootNode.addChildNode(dirNode)
 
         return scene
-    }
-
-    static func updateMaterials(scene: SCNScene?, project: SkinProject, showGrid: Bool) {
-        guard let scene = scene else { return }
-        for part in andyParts {
-            if let node = scene.rootNode.childNode(withName: part.name, recursively: true),
-               let box = node.geometry as? SCNBox {
-                box.materials = materialsForPart(part.bodyPart, project: project, showGrid: showGrid)
-            }
-        }
-    }
-
-    static func materialsForPart(_ bodyPart: SkinBodyPart, project: SkinProject, showGrid: Bool = false) -> [SCNMaterial] {
-        let faceOrder: [SkinFace] = [.right, .left, .top, .bottom, .front, .back]
-        return faceOrder.map { face in
-            let material = SCNMaterial()
-            let baseCanvas = project.extractRegion(bodyPart: bodyPart, face: face, layer: .base)
-            if let baseImage = baseCanvas.toCGImage(showGrid: showGrid) {
-                material.diffuse.contents = baseImage
-            }
-            material.diffuse.magnificationFilter = .nearest
-            material.diffuse.minificationFilter = .nearest
-            material.lightingModel = .blinn
-            return material
-        }
     }
 }
 

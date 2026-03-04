@@ -37,6 +37,7 @@ struct ContentView: View {
     @State private var documentToSave: VoxelDocument?
     @State private var showTilePreview = false
     @State private var show3DGrid = true
+    @State private var paint3DEnabled = false
 
     var body: some View {
         mainContent
@@ -357,6 +358,14 @@ struct ContentView: View {
         HStack {
             sectionHeader("3D VORSCHAU")
             Spacer()
+            Toggle(isOn: $paint3DEnabled) {
+                Image(systemName: "paintbrush")
+                    .font(.system(size: 10, weight: .medium))
+            }
+            .toggleStyle(.button)
+            .controlSize(.mini)
+            .tint(paint3DEnabled ? accentTeal : nil)
+            .help("Direkt auf 3D-Modell malen")
             Toggle(isOn: $show3DGrid) {
                 Image(systemName: "grid")
                     .font(.system(size: 10, weight: .medium))
@@ -366,7 +375,7 @@ struct ContentView: View {
             .help("Pixel-Grid auf 3D-Modell")
         }
 
-        SceneKitPreviewView(showGrid: show3DGrid)
+        SceneKitPreviewView(showGrid: show3DGrid, paintEnabled: paint3DEnabled)
 
         Divider()
 
@@ -815,6 +824,14 @@ struct ContentView: View {
         HStack {
             sectionHeader("3D VORSCHAU")
             Spacer()
+            Toggle(isOn: $paint3DEnabled) {
+                Image(systemName: "paintbrush")
+                    .font(.system(size: 10, weight: .medium))
+            }
+            .toggleStyle(.button)
+            .controlSize(.mini)
+            .tint(paint3DEnabled ? accentTeal : nil)
+            .help("Direkt auf 3D-Modell malen")
             Toggle(isOn: $show3DGrid) {
                 Image(systemName: "grid")
                     .font(.system(size: 10, weight: .medium))
@@ -824,7 +841,7 @@ struct ContentView: View {
             .help("Pixel-Grid auf 3D-Modell")
         }
 
-        AndyPreviewView(showGrid: show3DGrid)
+        AndyPreviewView(showGrid: show3DGrid, paintEnabled: paint3DEnabled)
     }
 
     // MARK: - Overlay Section (Block + Skin)
@@ -1398,6 +1415,31 @@ struct ContentView: View {
         Text("UV: (\(region.x),\(region.y)) \(region.width)×\(region.height)")
             .font(.system(size: 8, design: .monospaced))
             .foregroundStyle(.tertiary)
+
+        Divider()
+
+        // 3D Vorschau
+        HStack {
+            sectionHeader("3D VORSCHAU")
+            Spacer()
+            Toggle(isOn: $paint3DEnabled) {
+                Image(systemName: "paintbrush")
+                    .font(.system(size: 10, weight: .medium))
+            }
+            .toggleStyle(.button)
+            .controlSize(.mini)
+            .tint(paint3DEnabled ? accentTeal : nil)
+            .help("Direkt auf 3D-Modell malen")
+            Toggle(isOn: $show3DGrid) {
+                Image(systemName: "grid")
+                    .font(.system(size: 10, weight: .medium))
+            }
+            .toggleStyle(.button)
+            .controlSize(.mini)
+            .help("Pixel-Grid auf 3D-Modell")
+        }
+
+        EntityPreviewView(showGrid: show3DGrid, paintEnabled: paint3DEnabled)
     }
 
     // MARK: - Entity Export Card
