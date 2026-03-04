@@ -72,6 +72,9 @@ struct PixelCanvasView: View {
         let overlayCanvas = canvasVM.overlayCanvas
         let overlayOpacity = canvasVM.faceOverlayOpacity
 
+        // Tile Check
+        let tileCheckResult = canvasVM.tileCheckResult
+
         Canvas { context, _ in
 
             // 1. Schachbrett-Hintergrund
@@ -90,7 +93,12 @@ struct PixelCanvasView: View {
                 drawGridLines(context: context, width: cw, height: ch, cellSize: cs)
             }
 
-            // 5. Hover-Highlight
+            // 5. Tile-Check Mismatch-Visualisierung
+            if let result = tileCheckResult {
+                drawTileCheckIndicators(context: context, result: result, width: cw, height: ch, cellSize: cs)
+            }
+
+            // 6. Hover-Highlight
             if let hover = hover {
                 drawHoverIndicator(context: context, x: hover.x, y: hover.y, isPen: isPenTool, color: currentColor, cellSize: cs)
             }
@@ -235,6 +243,37 @@ struct PixelCanvasView: View {
             hPath.move(to: CGPoint(x: 0, y: pos))
             hPath.addLine(to: CGPoint(x: CGFloat(width) * cellSize, y: pos))
             context.stroke(hPath, with: .color(lineColor), lineWidth: 0.5)
+        }
+    }
+
+    /// Zeichnet rote/grüne Markierungen an den Kanten für Tile-Seamless-Prüfung
+    private func drawTileCheckIndicators(context: GraphicsContext, result: PixelCanvas.TileCheckResult, width: Int, height: Int, cellSize: CGFloat) {
+        let mismatchColor = Color.red.opacity(0.5)
+        let matchColor = Color.green.opacity(0.25)
+        let indicatorSize: CGFloat = max(3, cellSize * 0.25)
+
+        // Horizontale Kanten (links ↔ rechts)
+        let hMismatchYs = Set(result.horizontalMismatches.map { $0.y })
+        for y in 0..<height {
+            let color = hMismatchYs.contains(y) ? mismatchColor : matchColor
+            // Linker Rand
+            let leftRect = CGRect(x: 0, y: CGFloat(y) * cellSize, width: indicatorSize, height: cellSize)
+            context.fill(Path(leftRect), with: .color(color))
+            // Rechter Rand
+            let rightRect = CGRect(x: CGFloat(width) * cellSize - indicatorSize, y: CGFloat(y) * cellSize, width: indicatorSize, height: cellSize)
+            context.fill(Path(rightRect), with: .color(color))
+        }
+
+        // Vertikale Kanten (oben ↔ unten)
+        let vMismatchXs = Set(result.verticalMismatches.map { $0.x })
+        for x in 0..<width {
+            let color = vMismatchXs.contains(x) ? mismatchColor : matchColor
+            // Oberer Rand
+            let topRect = CGRect(x: CGFloat(x) * cellSize, y: 0, width: cellSize, height: indicatorSize)
+            context.fill(Path(topRect), with: .color(color))
+            // Unterer Rand
+            let bottomRect = CGRect(x: CGFloat(x) * cellSize, y: CGFloat(height) * cellSize - indicatorSize, width: cellSize, height: indicatorSize)
+            context.fill(Path(bottomRect), with: .color(color))
         }
     }
 

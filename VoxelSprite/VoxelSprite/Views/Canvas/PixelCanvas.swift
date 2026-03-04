@@ -222,4 +222,98 @@ struct PixelCanvas {
         }
         return result
     }
+
+    // MARK: - Tile-Seamless Prüfung
+
+    struct TileCheckResult {
+        var horizontalMismatches: [(x: Int, y: Int)] = []
+        var verticalMismatches: [(x: Int, y: Int)] = []
+        var isSeamless: Bool { horizontalMismatches.isEmpty && verticalMismatches.isEmpty }
+    }
+
+    /// Prüft ob die Textur nahtlos kachelt.
+    /// Vergleicht linke ↔ rechte und obere ↔ untere Kante.
+    func checkTileSeamless() -> TileCheckResult {
+        var result = TileCheckResult()
+
+        for y in 0..<height {
+            let leftColor = pixel(at: 0, y: y)
+            let rightColor = pixel(at: width - 1, y: y)
+            if !colorsMatch(leftColor, rightColor) {
+                result.horizontalMismatches.append((x: 0, y: y))
+            }
+        }
+
+        for x in 0..<width {
+            let topColor = pixel(at: x, y: 0)
+            let bottomColor = pixel(at: x, y: height - 1)
+            if !colorsMatch(topColor, bottomColor) {
+                result.verticalMismatches.append((x: x, y: 0))
+            }
+        }
+
+        return result
+    }
+
+    private func colorsMatch(_ a: Color?, _ b: Color?) -> Bool {
+        if a == nil && b == nil { return true }
+        guard let a = a, let b = b,
+              let ca = a.cgColorComponents, let cb = b.cgColorComponents else { return false }
+        let t: CGFloat = 0.02
+        return abs(ca.r - cb.r) < t && abs(ca.g - cb.g) < t
+            && abs(ca.b - cb.b) < t && abs(ca.a - cb.a) < t
+    }
+
+    // MARK: - Palette Reduce
+
+    /// Reduziert alle Farben auf die nächste Farbe aus der Palette.
+    /// Optional mit Floyd-Steinberg Dithering.
+    func reducedToPalette(_ palette: [Color], dithering: Bool = false) -> PixelCanvas {
+        let pc: [(r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat)] = palette.compactMap {
+            $0.cgColorComponents
+        }
+        guard !pc.isEmpty else { return self }
+
+        var result = PixelCanvas(width: width, height: height)
+
+        var errR = Array(repeating: Array(repeating: CGFloat(0), count: width + 2), count: height + 1)
+        var errG = errR, errB = errR
+
+        for y in 0..<height {
+            for x in 0..<width {
+                guard let color = pixel(at: x, y: y),
+                      let c = color.cgColorComponents else { continue }
+
+                var r = c.r, g = c.g, b = c.b
+                if dithering {
+                    r = max(0, min(1, r + errR[y][x + 1]))
+                    g = max(0, min(1, g + errG[y][x + 1]))
+                    b = max(0, min(1, b + errB[y][x + 1]))
+                }
+
+                // Nächste Farbe finden (euklidische Distanz)
+                var bestDist: CGFloat = .infinity
+                var bestIdx = 0
+                for (i, p) in pc.enumerated() {
+                    let d = (r - p.r) * (r - p.r) + (g - p.g) * (g - p.g) + (b - p.b) * (b - p.b)
+                    if d < bestDist { bestDist = d; bestIdx = i }
+                }
+
+                let n = pc[bestIdx]
+                result.setPixel(at: x, y: y, color: Color(red: n.r, green: n.g, blue: n.b, opacity: c.a))
+
+                if dithering {
+                    let eR = r - n.r, eG = g - n.g, eB = b - n.b
+                    // Floyd-Steinberg Distribution: 7/16, 3/16, 5/16, 1/16
+                    errR[y][x + 2]     += eR * 7/16; errR[y + 1][x] += eR * 3/16
+                    errR[y + 1][x + 1] += eR * 5/16; errR[y + 1][x + 2] += eR * 1/16
+                    errG[y][x + 2]     += eG * 7/16; errG[y + 1][x] += eG * 3/16
+                    errG[y + 1][x + 1] += eG * 5/16; errG[y + 1][x + 2] += eG * 1/16
+                    errB[y][x + 2]     += eB * 7/16; errB[y + 1][x] += eB * 3/16
+                    errB[y + 1][x + 1] += eB * 5/16; errB[y + 1][x + 2] += eB * 1/16
+                }
+            }
+        }
+        return result
+    }
 }
