@@ -1,8 +1,8 @@
 //
-//  StevePreviewView.swift
+//  AndyPreviewView.swift
 //  VoxelSprite
 //
-//  3D-Vorschau von Steve/Alex mit SceneKit.
+//  3D-Vorschau von Andy/Alex mit SceneKit.
 //  Baut den Charakter aus 6 Box-Geometrien (Kopf, Körper, Arme, Beine).
 //  Base + Overlay Layer werden als Texturen angewendet.
 //
@@ -10,7 +10,7 @@
 import SwiftUI
 import SceneKit
 
-struct StevePreviewView: View {
+struct AndyPreviewView: View {
 
     @EnvironmentObject var skinVM: SkinViewModel
 
@@ -18,7 +18,7 @@ struct StevePreviewView: View {
     var showGrid: Bool = false
 
     var body: some View {
-        SteveSceneView(project: skinVM.project, showGrid: showGrid)
+        AndySceneView(project: skinVM.project, showGrid: showGrid)
             .frame(maxWidth: .infinity)
             .aspectRatio(0.7, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -29,36 +29,36 @@ struct StevePreviewView: View {
     }
 }
 
-// MARK: - Steve Body Part Definition
+// MARK: - Andy Body Part Definition
 
-private struct StevePartDef {
+private struct AndyPartDef {
     let bodyPart: SkinBodyPart
     let scnSize: SCNVector3      // SceneKit Box Dimensions
     let position: SCNVector3     // Center position
     let name: String
 }
 
-/// Steve Proportionen (normalisiert: 1 Unit = 8 Pixel, Steve ~4 Units hoch)
-private let steveParts: [StevePartDef] = [
+/// Andy Proportionen (normalisiert: 1 Unit = 8 Pixel, Andy ~4 Units hoch)
+private let andyParts: [AndyPartDef] = [
     // Kopf: 8×8×8 → 1×1×1, Mitte bei y=3.5 (top=4, bottom=3)
-    StevePartDef(bodyPart: .head, scnSize: SCNVector3(1, 1, 1), position: SCNVector3(0, 3.25, 0), name: "head"),
+    AndyPartDef(bodyPart: .head, scnSize: SCNVector3(1, 1, 1), position: SCNVector3(0, 3.25, 0), name: "head"),
     // Körper: 8×12×4 → 1×1.5×0.5, Mitte bei y=2 (top=2.75, bottom=1.25)
-    StevePartDef(bodyPart: .body, scnSize: SCNVector3(1, 1.5, 0.5), position: SCNVector3(0, 2, 0), name: "body"),
+    AndyPartDef(bodyPart: .body, scnSize: SCNVector3(1, 1.5, 0.5), position: SCNVector3(0, 2, 0), name: "body"),
     // R. Arm: 4×12×4 → 0.5×1.5×0.5, rechts vom Körper
-    StevePartDef(bodyPart: .rightArm, scnSize: SCNVector3(0.5, 1.5, 0.5), position: SCNVector3(0.75, 2, 0), name: "rightArm"),
+    AndyPartDef(bodyPart: .rightArm, scnSize: SCNVector3(0.5, 1.5, 0.5), position: SCNVector3(0.75, 2, 0), name: "rightArm"),
     // L. Arm: 4×12×4 → 0.5×1.5×0.5, links vom Körper
-    StevePartDef(bodyPart: .leftArm, scnSize: SCNVector3(0.5, 1.5, 0.5), position: SCNVector3(-0.75, 2, 0), name: "leftArm"),
+    AndyPartDef(bodyPart: .leftArm, scnSize: SCNVector3(0.5, 1.5, 0.5), position: SCNVector3(-0.75, 2, 0), name: "leftArm"),
     // R. Bein: 4×12×4 → 0.5×1.5×0.5, rechte Hälfte unten
-    StevePartDef(bodyPart: .rightLeg, scnSize: SCNVector3(0.5, 1.5, 0.5), position: SCNVector3(0.25, 0.5, 0), name: "rightLeg"),
+    AndyPartDef(bodyPart: .rightLeg, scnSize: SCNVector3(0.5, 1.5, 0.5), position: SCNVector3(0.25, 0.5, 0), name: "rightLeg"),
     // L. Bein: 4×12×4 → 0.5×1.5×0.5, linke Hälfte unten
-    StevePartDef(bodyPart: .leftLeg, scnSize: SCNVector3(0.5, 1.5, 0.5), position: SCNVector3(-0.25, 0.5, 0), name: "leftLeg"),
+    AndyPartDef(bodyPart: .leftLeg, scnSize: SCNVector3(0.5, 1.5, 0.5), position: SCNVector3(-0.25, 0.5, 0), name: "leftLeg"),
 ]
 
 // MARK: - Platform SCNView Wrapper
 
 #if os(macOS)
 
-struct SteveSceneView: NSViewRepresentable {
+struct AndySceneView: NSViewRepresentable {
     let project: SkinProject
     var showGrid: Bool = false
 
@@ -79,8 +79,8 @@ struct SteveSceneView: NSViewRepresentable {
         let scene = SCNScene()
         scene.background.contents = NSColor(red: 0.05, green: 0.05, blue: 0.08, alpha: 1)
 
-        // Steve Körperteile erstellen
-        for part in steveParts {
+        // Andy Körperteile erstellen
+        for part in andyParts {
             let box = SCNBox(
                 width: CGFloat(part.scnSize.x),
                 height: CGFloat(part.scnSize.y),
@@ -127,7 +127,7 @@ struct SteveSceneView: NSViewRepresentable {
 
     static func updateMaterials(scene: SCNScene?, project: SkinProject, showGrid: Bool) {
         guard let scene = scene else { return }
-        for part in steveParts {
+        for part in andyParts {
             if let node = scene.rootNode.childNode(withName: part.name, recursively: true),
                let box = node.geometry as? SCNBox {
                 box.materials = materialsForPart(part.bodyPart, project: project, showGrid: showGrid)
@@ -191,7 +191,7 @@ struct SteveSceneView: NSViewRepresentable {
 
 #elseif os(iOS)
 
-struct SteveSceneView: UIViewRepresentable {
+struct AndySceneView: UIViewRepresentable {
     let project: SkinProject
     var showGrid: Bool = false
 
@@ -212,7 +212,7 @@ struct SteveSceneView: UIViewRepresentable {
         let scene = SCNScene()
         scene.background.contents = UIColor(red: 0.05, green: 0.05, blue: 0.08, alpha: 1)
 
-        for part in steveParts {
+        for part in andyParts {
             let box = SCNBox(
                 width: CGFloat(part.scnSize.x),
                 height: CGFloat(part.scnSize.y),
@@ -252,7 +252,7 @@ struct SteveSceneView: UIViewRepresentable {
 
     static func updateMaterials(scene: SCNScene?, project: SkinProject, showGrid: Bool) {
         guard let scene = scene else { return }
-        for part in steveParts {
+        for part in andyParts {
             if let node = scene.rootNode.childNode(withName: part.name, recursively: true),
                let box = node.geometry as? SCNBox {
                 box.materials = materialsForPart(part.bodyPart, project: project, showGrid: showGrid)

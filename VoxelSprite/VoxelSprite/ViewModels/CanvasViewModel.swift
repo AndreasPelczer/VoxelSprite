@@ -16,7 +16,7 @@ class CanvasViewModel: ObservableObject {
     enum EditorMode: String, CaseIterable, Identifiable {
         case block    = "Block"
         case item     = "Item"
-        case skin     = "Steve"
+        case skin     = "Andy"
         case painting = "Painting"
         case recipe   = "Rezept"
         case entity   = "Entity"

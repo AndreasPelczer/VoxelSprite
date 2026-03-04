@@ -3,7 +3,7 @@
 //  VoxelSprite
 //
 //  Das Pixel-Raster zum Zeichnen.
-//  Unterstützt quadratische und rechteckige Canvases (für Steve-Faces).
+//  Unterstützt quadratische und rechteckige Canvases (für Andy-Faces).
 //  Bezieht Canvas-Daten über CanvasViewModel (modus-unabhängig).
 //
 
