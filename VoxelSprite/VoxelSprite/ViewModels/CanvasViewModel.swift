@@ -59,6 +59,18 @@ class CanvasViewModel: ObservableObject {
             case .select:     return "rectangle.dashed"
             }
         }
+
+        var shortcutHint: String {
+            switch self {
+            case .pen:        return "1"
+            case .eraser:     return "2"
+            case .fill:       return "3"
+            case .line:       return "4"
+            case .rectangle:  return "5"
+            case .eyedropper: return "6"
+            case .select:     return "7"
+            }
+        }
     }
 
     // MARK: - Selection
@@ -111,6 +123,32 @@ class CanvasViewModel: ObservableObject {
 
     @Published var selection: Selection?
     @Published var selectionDragStart: (x: Int, y: Int)?
+
+    // MARK: - Cursor Position (für Statusleiste)
+
+    @Published var cursorX: Int?
+    @Published var cursorY: Int?
+
+    // MARK: - Zuletzt benutzte Farben
+
+    @Published var recentColors: [Color] = []
+    private let maxRecentColors = 10
+
+    func trackColor(_ color: Color) {
+        // Entferne Duplikate (ungefähr gleiche Farben)
+        recentColors.removeAll { existing in
+            guard let ac = existing.cgColorComponents,
+                  let bc = color.cgColorComponents else { return false }
+            let threshold: CGFloat = 0.01
+            return abs(ac.r - bc.r) < threshold
+                && abs(ac.g - bc.g) < threshold
+                && abs(ac.b - bc.b) < threshold
+        }
+        recentColors.insert(color, at: 0)
+        if recentColors.count > maxRecentColors {
+            recentColors = Array(recentColors.prefix(maxRecentColors))
+        }
+    }
 
     // MARK: - Zoom
 
@@ -284,6 +322,11 @@ class CanvasViewModel: ObservableObject {
             commitSelection()
             shapeStartPoint = (x, y)
             return
+        }
+
+        // Farbe in den Verlauf aufnehmen
+        if currentTool != .eraser && currentTool != .eyedropper {
+            trackColor(currentColor)
         }
 
         saveUndoState()

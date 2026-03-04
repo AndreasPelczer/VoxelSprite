@@ -97,6 +97,23 @@ struct ColorPaletteView: View {
                     .foregroundStyle(.secondary)
             }
 
+            // MARK: - Zuletzt benutzte Farben
+
+            if !canvasVM.recentColors.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Zuletzt")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(.secondary)
+
+                    HStack(spacing: 3) {
+                        ForEach(Array(canvasVM.recentColors.prefix(10).enumerated()), id: \.offset) { _, color in
+                            colorSwatch(color, size: 18)
+                        }
+                        Spacer()
+                    }
+                }
+            }
+
             // MARK: - Farbpalette Grid
 
             LazyVGrid(
@@ -172,7 +189,7 @@ struct ColorPaletteView: View {
 
     // MARK: - Subviews
 
-    private func colorSwatch(_ color: Color) -> some View {
+    private func colorSwatch(_ color: Color, size: CGFloat = 22) -> some View {
         let isSelected = isSameColor(color, canvasVM.currentColor)
 
         return Button {
@@ -183,7 +200,7 @@ struct ColorPaletteView: View {
         } label: {
             RoundedRectangle(cornerRadius: 4)
                 .fill(color)
-                .frame(width: 22, height: 22)
+                .frame(width: size, height: size)
                 .overlay(
                     RoundedRectangle(cornerRadius: 4)
                         .stroke(
