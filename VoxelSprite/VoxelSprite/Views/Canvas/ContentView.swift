@@ -24,6 +24,7 @@ struct ContentView: View {
     @EnvironmentObject var blockVM: BlockViewModel
     @EnvironmentObject var canvasVM: CanvasViewModel
     @EnvironmentObject var exportVM: ExportViewModel
+    @EnvironmentObject var itemVM: ItemViewModel
     @EnvironmentObject var skinVM: SkinViewModel
 
     @State private var showSaveDialog = false
@@ -157,9 +158,12 @@ struct ContentView: View {
                     Divider()
 
                     // MARK: - Modus-spezifischer Inhalt
-                    if canvasVM.editorMode == .block {
+                    switch canvasVM.editorMode {
+                    case .block:
                         blockSidebarContent
-                    } else {
+                    case .item:
+                        itemSidebarContent
+                    case .skin:
                         skinSidebarContent
                     }
 
@@ -171,9 +175,12 @@ struct ContentView: View {
                     Divider()
 
                     // MARK: - Export
-                    if canvasVM.editorMode == .block {
+                    switch canvasVM.editorMode {
+                    case .block:
                         exportCard
-                    } else {
+                    case .item:
+                        itemExportCard
+                    case .skin:
                         skinExportCard
                     }
                 }
@@ -471,6 +478,260 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - Item Sidebar
+
+    @ViewBuilder
+    private var itemSidebarContent: some View {
+        // Item-Einstellungen
+        sectionHeader("ITEM")
+
+        // Item-Name
+        HStack {
+            Text("Name:")
+                .font(.system(size: 11, weight: .medium))
+            TextField("item_name", text: $itemVM.project.name)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 11, design: .monospaced))
+                .controlSize(.small)
+        }
+
+        // Canvas-Größe
+        HStack(spacing: 6) {
+            ForEach(PixelCanvas.PresetSize.allCases) { preset in
+                Button {
+                    itemVM.newProject(gridSize: preset.rawValue)
+                    canvasVM.resetUndoHistory()
+                } label: {
+                    Text(preset.label)
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(itemVM.project.gridSize == preset.rawValue ? accentTeal : nil)
+            }
+        }
+
+        // Display-Typ
+        sectionHeader("DISPLAY")
+
+        HStack(spacing: 4) {
+            ForEach(ItemDisplayType.allCases) { displayType in
+                Button {
+                    itemVM.project.displayType = displayType
+                } label: {
+                    VStack(spacing: 3) {
+                        Image(systemName: displayType.iconName)
+                            .font(.system(size: 14))
+                        Text(displayType.rawValue)
+                            .font(.system(size: 9, weight: .medium))
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(itemVM.project.displayType == displayType ? accentTeal : nil)
+            }
+        }
+
+        Text(itemVM.project.displayType.description)
+            .font(.system(size: 9, design: .monospaced))
+            .foregroundStyle(.tertiary)
+
+        Divider()
+
+        // Layer-Verwaltung
+        itemLayerSection
+
+        Divider()
+
+        // 3D Vorschau
+        HStack {
+            sectionHeader("3D VORSCHAU")
+            Spacer()
+            Toggle(isOn: $show3DGrid) {
+                Image(systemName: "grid")
+                    .font(.system(size: 10, weight: .medium))
+            }
+            .toggleStyle(.button)
+            .controlSize(.mini)
+            .help("Pixel-Grid auf 3D-Modell")
+        }
+
+        ItemPreviewView(showGrid: show3DGrid)
+    }
+
+    // MARK: - Item Layer Section
+
+    private var itemLayerSection: some View {
+        VStack(spacing: 8) {
+            HStack {
+                sectionHeader("LAYER")
+                Spacer()
+
+                // Layer hinzufügen
+                Button {
+                    canvasVM.resetUndoHistory()
+                    itemVM.addLayer()
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 10, weight: .bold))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(accentTeal)
+                .help("Layer hinzufügen")
+            }
+
+            // Layer-Liste
+            ForEach(0..<itemVM.project.layers.count, id: \.self) { index in
+                HStack(spacing: 6) {
+                    // Layer-Thumbnail
+                    let canvas = itemVM.project.layers[index]
+                    if let cgImage = canvas.toCGImage() {
+                        #if os(macOS)
+                        let nsImage = NSImage(cgImage: cgImage, size: NSSize(width: canvas.width, height: canvas.height))
+                        Image(nsImage: nsImage)
+                            .resizable()
+                            .interpolation(.none)
+                            .frame(width: 28, height: 28)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                        #elseif os(iOS)
+                        Image(uiImage: UIImage(cgImage: cgImage))
+                            .resizable()
+                            .interpolation(.none)
+                            .frame(width: 28, height: 28)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                        #endif
+                    }
+
+                    Text("layer\(index)")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(index == itemVM.activeLayerIndex ? accentTeal : .secondary)
+
+                    Spacer()
+
+                    // Layer löschen
+                    if itemVM.project.layers.count > 1 {
+                        Button {
+                            canvasVM.resetUndoHistory()
+                            itemVM.deleteLayer()
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(.system(size: 9))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.red.opacity(0.6))
+                    }
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(index == itemVM.activeLayerIndex ? accentTeal.opacity(0.12) : Color.clear)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(index == itemVM.activeLayerIndex ? accentTeal.opacity(0.5) : .clear, lineWidth: 1)
+                )
+                .onTapGesture {
+                    canvasVM.resetUndoHistory()
+                    itemVM.selectLayer(index)
+                }
+            }
+
+            if itemVM.project.isMultiLayer {
+                Text("Layer 0 = hinten, höhere Layer = vorne")
+                    .font(.system(size: 8, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    // MARK: - Item Export Card
+
+    private var itemExportCard: some View {
+        VStack(spacing: 10) {
+            sectionHeader("EXPORT")
+
+            // Ziel-Version
+            Picker("Version:", selection: $itemVM.project.targetVersion) {
+                ForEach(BlockProject.TargetVersion.allCases) { version in
+                    Text(version.shortLabel).tag(version)
+                }
+            }
+            .pickerStyle(.segmented)
+            .controlSize(.mini)
+
+            // Namespace
+            HStack {
+                Text("Namespace:")
+                    .font(.system(size: 10, weight: .medium))
+                TextField("minecraft", text: $itemVM.project.namespace)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 10, design: .monospaced))
+                    .controlSize(.small)
+            }
+
+            // Transparenter Hintergrund
+            Toggle("Transparenter Hintergrund", isOn: $exportVM.transparentBackground)
+                .font(.system(size: 11))
+                .toggleStyle(.switch)
+                .controlSize(.small)
+
+            // Export-Info
+            if itemVM.project.isMultiLayer {
+                exportBadge("\(itemVM.project.layerCount) Layer", icon: "square.stack", color: .blue)
+            }
+
+            // Export-Fortschritt
+            if exportVM.isExporting {
+                VStack(spacing: 4) {
+                    ProgressView(value: exportVM.exportProgress)
+                        .progressViewStyle(.linear)
+                        .tint(accentTeal)
+                    Text(exportVM.exportStatus)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            // Export-Buttons
+            VStack(spacing: 6) {
+                Button {
+                    exportVM.exportItemPNG()
+                } label: {
+                    Label("Item PNG", systemImage: "photo")
+                        .font(.system(size: 11, weight: .bold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .tint(accentTeal)
+                .disabled(exportVM.isExporting)
+
+                Button {
+                    exportVM.exportItemResourcepack()
+                } label: {
+                    Label("Resourcepack", systemImage: "shippingbox")
+                        .font(.system(size: 11, weight: .bold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .tint(accentTeal.opacity(0.7))
+                .disabled(exportVM.isExporting)
+            }
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.white.opacity(0.04))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(accentTeal.opacity(0.15), lineWidth: 1)
+        )
+    }
+
     // MARK: - Skin Sidebar
 
     @ViewBuilder
@@ -521,6 +782,11 @@ struct ContentView: View {
                 }
                 .pickerStyle(.menu)
                 .controlSize(.mini)
+            } else if canvasVM.editorMode == .item {
+                // Item-Modus: Overlay zeigt andere Layer
+                Text("Zeigt andere Layer")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(.tertiary)
             } else {
                 // Skin-Modus: Overlay zeigt automatisch den anderen Layer
                 Text(skinVM.activeLayer == .base ? "Zeigt Overlay-Layer" : "Zeigt Base-Layer")

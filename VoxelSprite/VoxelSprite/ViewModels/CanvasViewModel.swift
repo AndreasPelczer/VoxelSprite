@@ -3,7 +3,7 @@
 //  VoxelSprite
 //
 //  Steuert alles rund ums Zeichnen auf dem Canvas.
-//  Unterstützt Block-Modus und Skin-Modus.
+//  Unterstützt Block-Modus, Item-Modus und Skin-Modus.
 //
 
 import SwiftUI
@@ -15,6 +15,7 @@ class CanvasViewModel: ObservableObject {
 
     enum EditorMode: String, CaseIterable, Identifiable {
         case block = "Block"
+        case item  = "Item"
         case skin  = "Steve"
 
         var id: String { rawValue }
@@ -22,6 +23,7 @@ class CanvasViewModel: ObservableObject {
         var iconName: String {
             switch self {
             case .block: return "cube"
+            case .item:  return "shield"
             case .skin:  return "figure.stand"
             }
         }
@@ -82,6 +84,7 @@ class CanvasViewModel: ObservableObject {
     // MARK: - Referenzen
 
     private weak var blockViewModel: BlockViewModel?
+    private weak var itemViewModel: ItemViewModel?
     private weak var skinViewModel: SkinViewModel?
 
     // MARK: - Init
@@ -90,6 +93,10 @@ class CanvasViewModel: ObservableObject {
 
     func connect(to blockViewModel: BlockViewModel) {
         self.blockViewModel = blockViewModel
+    }
+
+    func connect(to itemViewModel: ItemViewModel) {
+        self.itemViewModel = itemViewModel
     }
 
     func connect(to skinViewModel: SkinViewModel) {
@@ -102,6 +109,8 @@ class CanvasViewModel: ObservableObject {
         switch editorMode {
         case .block:
             return blockViewModel?.activeCanvas ?? PixelCanvas(gridSize: 16)
+        case .item:
+            return itemViewModel?.activeCanvas ?? PixelCanvas(gridSize: 16)
         case .skin:
             return skinViewModel?.activeCanvas ?? PixelCanvas(width: 8, height: 8)
         }
@@ -117,6 +126,8 @@ class CanvasViewModel: ObservableObject {
         switch editorMode {
         case .block:
             blockViewModel?.updateActiveCanvas(canvas)
+        case .item:
+            itemViewModel?.updateActiveCanvas(canvas)
         case .skin:
             skinViewModel?.updateActiveCanvas(canvas)
         }
@@ -127,6 +138,9 @@ class CanvasViewModel: ObservableObject {
         case .block:
             blockViewModel?.applyTemplate()
             blockViewModel?.scheduleStrokeAutosave()
+        case .item:
+            itemViewModel?.applyTemplate()
+            itemViewModel?.scheduleStrokeAutosave()
         case .skin:
             skinViewModel?.applyTemplate()
             skinViewModel?.scheduleStrokeAutosave()
@@ -148,7 +162,7 @@ class CanvasViewModel: ObservableObject {
         }
     }
 
-    /// Canvas des Overlay-Faces (Block) oder des anderen Layers (Skin)
+    /// Canvas des Overlay-Faces (Block), anderer Layer (Item/Skin)
     var overlayCanvas: PixelCanvas? {
         guard faceOverlayEnabled else { return nil }
 
@@ -157,6 +171,8 @@ class CanvasViewModel: ObservableObject {
             guard let blockVM = blockViewModel else { return nil }
             let faceType = overlayFaceType ?? oppositeFaceType ?? .north
             return blockVM.project.canvas(for: faceType)
+        case .item:
+            return itemViewModel?.overlayCanvas()
         case .skin:
             return skinViewModel?.overlayCanvas()
         }
