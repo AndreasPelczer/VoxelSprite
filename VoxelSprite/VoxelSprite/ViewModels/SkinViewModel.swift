@@ -28,6 +28,9 @@ class SkinViewModel: ObservableObject {
     /// Das extrahierte Canvas für die aktuelle Auswahl
     @Published var editCanvas: PixelCanvas
 
+    /// Referenz zum Workspace-Manager für Autosave
+    weak var workspaceManager: WorkspaceManager?
+
     // MARK: - Init
 
     init() {
@@ -94,7 +97,7 @@ class SkinViewModel: ObservableObject {
     }
 
     func scheduleStrokeAutosave() {
-        // TODO: Autosave für Skins
+        workspaceManager?.scheduleStrokeAutosave()
     }
 
     // MARK: - Overlay Canvas (zeigt den anderen Layer)

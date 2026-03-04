@@ -26,6 +26,7 @@ struct VoxelSpriteApp: App {
     @StateObject private var resourcepackVM = ResourcepackViewModel()
     @StateObject private var entityVM = EntityViewModel()
     @StateObject private var armorVM = ArmorViewModel()
+    @StateObject private var workspaceManager = WorkspaceManager()
 
     @Environment(\.scenePhase) private var scenePhase
 
@@ -33,7 +34,10 @@ struct VoxelSpriteApp: App {
 
     @State private var showSaveDialog = false
     @State private var showOpenDialog = false
+    @State private var showWorkspaceSaveDialog = false
+    @State private var showWorkspaceOpenDialog = false
     @State private var documentToSave: VoxelDocument?
+    @State private var workspaceDocumentToSave: VoxelWorkspaceDocument?
 
     // MARK: - Body
 
@@ -51,6 +55,7 @@ struct VoxelSpriteApp: App {
                 .environmentObject(resourcepackVM)
                 .environmentObject(entityVM)
                 .environmentObject(armorVM)
+                .environmentObject(workspaceManager)
                 .onAppear {
                     canvasVM.connect(to: blockVM)
                     canvasVM.connect(to: itemVM)
@@ -60,14 +65,42 @@ struct VoxelSpriteApp: App {
                     canvasVM.connect(to: armorVM)
                     exportVM.connect(to: blockVM)
                     exportVM.connect(to: itemVM)
+
+                    // Workspace-Manager verbinden
+                    workspaceManager.connect(
+                        blockVM: blockVM,
+                        skinVM: skinVM,
+                        itemVM: itemVM,
+                        paintingVM: paintingVM,
+                        entityVM: entityVM,
+                        armorVM: armorVM,
+                        recipeVM: recipeVM
+                    )
+
+                    // Autosave-Referenzen setzen
+                    blockVM.workspaceManager = workspaceManager
+                    skinVM.workspaceManager = workspaceManager
+                    itemVM.workspaceManager = workspaceManager
+                    paintingVM.workspaceManager = workspaceManager
+                    entityVM.workspaceManager = workspaceManager
+                    armorVM.workspaceManager = workspaceManager
+
                     blockVM.startAutosave()
+                    workspaceManager.startAutosave()
+
+                    // Workspace-Autosave laden
+                    if workspaceManager.hasAutosave {
+                        try? workspaceManager.loadAutosave()
+                        canvasVM.resetUndoHistory()
+                    }
                 }
                 .onChange(of: scenePhase) { _, newPhase in
                     if newPhase == .inactive || newPhase == .background {
                         blockVM.autosave()
+                        workspaceManager.autosave()
                     }
                 }
-                // MARK: - Speichern unter
+                // MARK: - Block Speichern unter
                 .fileExporter(
                     isPresented: $showSaveDialog,
                     document: documentToSave,
@@ -82,10 +115,12 @@ struct VoxelSpriteApp: App {
                         print("Speichern fehlgeschlagen: \(error.localizedDescription)")
                     }
                 }
-                // MARK: - Öffnen
+                // MARK: - Block Öffnen
                 .fileImporter(
                     isPresented: $showOpenDialog,
-                    allowedContentTypes: [UTType(filenameExtension: "voxel") ?? .json],
+                    allowedContentTypes: [
+                        UTType(filenameExtension: "voxel") ?? .json
+                    ],
                     allowsMultipleSelection: false
                 ) { result in
                     switch result {
@@ -99,6 +134,41 @@ struct VoxelSpriteApp: App {
                         }
                     case .failure(let error):
                         print("Öffnen fehlgeschlagen: \(error.localizedDescription)")
+                    }
+                }
+                // MARK: - Workspace Speichern unter
+                .fileExporter(
+                    isPresented: $showWorkspaceSaveDialog,
+                    document: workspaceDocumentToSave,
+                    contentType: UTType(filenameExtension: "voxelwork") ?? .json,
+                    defaultFilename: "workspace.voxelwork"
+                ) { result in
+                    switch result {
+                    case .success(let url):
+                        workspaceManager.currentFileURL = url
+                    case .failure(let error):
+                        print("Workspace-Speichern fehlgeschlagen: \(error.localizedDescription)")
+                    }
+                }
+                // MARK: - Workspace Öffnen
+                .fileImporter(
+                    isPresented: $showWorkspaceOpenDialog,
+                    allowedContentTypes: [
+                        UTType(filenameExtension: "voxelwork") ?? .json
+                    ],
+                    allowsMultipleSelection: false
+                ) { result in
+                    switch result {
+                    case .success(let urls):
+                        guard let url = urls.first else { return }
+                        do {
+                            try workspaceManager.loadWorkspace(from: url)
+                            canvasVM.resetUndoHistory()
+                        } catch {
+                            print("Workspace-Öffnen fehlgeschlagen: \(error.localizedDescription)")
+                        }
+                    case .failure(let error):
+                        print("Workspace-Öffnen fehlgeschlagen: \(error.localizedDescription)")
                     }
                 }
         }
@@ -128,6 +198,18 @@ struct VoxelSpriteApp: App {
                     saveFileAs()
                 }
                 .keyboardShortcut("s", modifiers: [.command, .shift])
+
+                Divider()
+
+                Button("Workspace speichern…") {
+                    saveWorkspace()
+                }
+                .keyboardShortcut("s", modifiers: [.command, .option])
+
+                Button("Workspace öffnen…") {
+                    showWorkspaceOpenDialog = true
+                }
+                .keyboardShortcut("o", modifiers: [.command, .option])
 
                 Divider()
 
@@ -216,5 +298,34 @@ struct VoxelSpriteApp: App {
         }
         documentToSave = VoxelDocument(data: data)
         showSaveDialog = true
+    }
+
+    // MARK: - Workspace-Operationen
+
+    private func saveWorkspace() {
+        if let url = workspaceManager.currentFileURL {
+            do {
+                try workspaceManager.saveWorkspace(to: url)
+            } catch {
+                saveWorkspaceAs()
+            }
+        } else {
+            saveWorkspaceAs()
+        }
+    }
+
+    private func saveWorkspaceAs() {
+        do {
+            try workspaceManager.saveWorkspace(
+                to: FileManager.default.temporaryDirectory
+                    .appendingPathComponent("workspace_temp.voxelwork")
+            )
+            let data = try Data(contentsOf: FileManager.default.temporaryDirectory
+                .appendingPathComponent("workspace_temp.voxelwork"))
+            workspaceDocumentToSave = VoxelWorkspaceDocument(data: data)
+            showWorkspaceSaveDialog = true
+        } catch {
+            print("Workspace-Speichern fehlgeschlagen: \(error.localizedDescription)")
+        }
     }
 }

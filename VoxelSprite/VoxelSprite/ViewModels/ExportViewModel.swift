@@ -254,7 +254,8 @@ class ExportViewModel: ObservableObject {
             try exportCTMFiles(project: project, packDir: packDir)
         }
 
-        return packDir
+        // ZIP komprimieren
+        return try zipAndCleanup(directory: packDir, zipName: project.name)
     }
 
     /// Exportiert die Face-Texturen und gibt die Textur-Pfade zurück
@@ -781,7 +782,8 @@ class ExportViewModel: ObservableObject {
         let packMetaData = try JSONSerialization.data(withJSONObject: packMeta, options: .prettyPrinted)
         try packMetaData.write(to: packDir.appendingPathComponent("pack.mcmeta"), options: .atomic)
 
-        return packDir
+        // ZIP komprimieren
+        return try zipAndCleanup(directory: packDir, zipName: "\(project.name)_item")
     }
 
     /// Item Model JSON
@@ -889,7 +891,8 @@ class ExportViewModel: ObservableObject {
         let packMetaData = try JSONSerialization.data(withJSONObject: packMeta, options: .prettyPrinted)
         try packMetaData.write(to: packDir.appendingPathComponent("pack.mcmeta"), options: .atomic)
 
-        return packDir
+        // ZIP komprimieren
+        return try zipAndCleanup(directory: packDir, zipName: "\(project.name)_painting")
     }
 
     // MARK: - Recipe JSON Export
@@ -988,7 +991,8 @@ class ExportViewModel: ObservableObject {
         let packMetaData = try JSONSerialization.data(withJSONObject: packMeta, options: .prettyPrinted)
         try packMetaData.write(to: packDir.appendingPathComponent("pack.mcmeta"), options: .atomic)
 
-        return packDir
+        // ZIP komprimieren
+        return try zipAndCleanup(directory: packDir, zipName: "\(recipe.name)_datapack")
     }
 
     // MARK: - Combined Resourcepack Export (Multi-Asset)
@@ -1184,7 +1188,8 @@ class ExportViewModel: ObservableObject {
         let packMetaData = try JSONSerialization.data(withJSONObject: packMeta, options: .prettyPrinted)
         try packMetaData.write(to: packDir.appendingPathComponent("pack.mcmeta"), options: .atomic)
 
-        return packDir
+        // ZIP komprimieren
+        return try zipAndCleanup(directory: packDir, zipName: project.name)
     }
 
     // MARK: - Combined Datapack Export
@@ -1288,7 +1293,8 @@ class ExportViewModel: ObservableObject {
         let packMetaData = try JSONSerialization.data(withJSONObject: packMeta, options: .prettyPrinted)
         try packMetaData.write(to: packDir.appendingPathComponent("pack.mcmeta"), options: .atomic)
 
-        return packDir
+        // ZIP komprimieren
+        return try zipAndCleanup(directory: packDir, zipName: "\(project.name)_datapack")
     }
 
     // MARK: - Entity Resourcepack Export
@@ -1363,7 +1369,8 @@ class ExportViewModel: ObservableObject {
         let packMetaData = try JSONSerialization.data(withJSONObject: packMeta, options: .prettyPrinted)
         try packMetaData.write(to: packDir.appendingPathComponent("pack.mcmeta"), options: .atomic)
 
-        return packDir
+        // ZIP komprimieren
+        return try zipAndCleanup(directory: packDir, zipName: "\(project.name)_entity")
     }
 
     // MARK: - Armor Resourcepack Export
@@ -1452,7 +1459,8 @@ class ExportViewModel: ObservableObject {
         let packMetaData = try JSONSerialization.data(withJSONObject: packMeta, options: .prettyPrinted)
         try packMetaData.write(to: packDir.appendingPathComponent("pack.mcmeta"), options: .atomic)
 
-        return packDir
+        // ZIP komprimieren
+        return try zipAndCleanup(directory: packDir, zipName: "\(project.name)_armor")
     }
 
     // MARK: - Full Canvas Rendering (für Paintings mit variabler Größe)
@@ -1490,6 +1498,24 @@ class ExportViewModel: ObservableObject {
         }
 
         return context.makeImage()
+    }
+
+    // MARK: - ZIP Compression
+
+    /// Komprimiert ein Verzeichnis zu einer ZIP-Datei und gibt die ZIP-URL zurück
+    private func zipAndCleanup(directory: URL, zipName: String) throws -> URL {
+        let zipURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(zipName).zip")
+
+        // Vorherige ZIP löschen falls vorhanden
+        try? FileManager.default.removeItem(at: zipURL)
+
+        _ = try ZIPHelper.zipDirectory(at: directory, to: zipURL)
+
+        // Quellverzeichnis aufräumen
+        try? FileManager.default.removeItem(at: directory)
+
+        return zipURL
     }
 
     // MARK: - Aufräumen

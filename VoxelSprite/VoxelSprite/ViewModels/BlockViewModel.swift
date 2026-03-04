@@ -25,6 +25,9 @@ class BlockViewModel: ObservableObject {
     /// Pfad der aktuell geöffneten Datei (nil = noch nicht gespeichert)
     @Published var currentFileURL: URL?
 
+    /// Referenz zum Workspace-Manager für Autosave
+    weak var workspaceManager: WorkspaceManager?
+
     // MARK: - Init
 
     init() {
@@ -223,6 +226,7 @@ class BlockViewModel: ObservableObject {
         strokeDebounceTimer?.invalidate()
         strokeDebounceTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: false) { [weak self] _ in
             self?.autosave()
+            self?.workspaceManager?.scheduleStrokeAutosave()
         }
     }
 
