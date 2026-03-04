@@ -131,8 +131,10 @@ struct AndyPreviewView: View {
     // MARK: - Paint Handling
 
     /// SCNBox Face-Index → SkinFace Mapping
-    /// SCNBox: 0=+X(Right), 1=-X(Left), 2=+Y(Top), 3=-Y(Bottom), 4=+Z(Front), 5=-Z(Back)
-    private static let boxFaceToSkinFace: [SkinFace] = [.right, .left, .top, .bottom, .front, .back]
+    /// SCNBox: 0=+X(Left), 1=-X(Right), 2=+Y(Top), 3=-Y(Bottom), 4=+Z(Front), 5=-Z(Back)
+    /// Charakter schaut Richtung +Z (zur Kamera). Links/Rechts sind aus Charakter-Sicht:
+    /// +X = Ost = Charakter-Links, -X = West = Charakter-Rechts
+    private static let boxFaceToSkinFace: [SkinFace] = [.left, .right, .top, .bottom, .front, .back]
 
     /// Node-Name → SkinBodyPart Mapping
     private static let nodeNameToBodyPart: [String: SkinBodyPart] = [
@@ -183,7 +185,10 @@ struct AndyPreviewView: View {
     // MARK: - Materials
 
     static func materialsForPart(_ bodyPart: SkinBodyPart, project: SkinProject, showGrid: Bool = false, activeBodyPart: SkinBodyPart? = nil, activeFace: SkinFace? = nil) -> [SCNMaterial] {
-        let faceOrder: [SkinFace] = [.right, .left, .top, .bottom, .front, .back]
+        /// SCNBox Material-Reihenfolge: +X, -X, +Y, -Y, +Z, -Z
+        /// Charakter schaut Richtung +Z (zur Kamera):
+        /// +X = Ost = Charakter-Links, -X = West = Charakter-Rechts
+        let faceOrder: [SkinFace] = [.left, .right, .top, .bottom, .front, .back]
         let isActivePart = activeBodyPart != nil && bodyPart == activeBodyPart
         return faceOrder.map { face in
             let material = SCNMaterial()
@@ -240,13 +245,15 @@ private struct AndyPartDef {
     let name: String
 }
 
+/// Charakter schaut Richtung +Z (zur Kamera).
+/// Rechter Arm/Bein bei -X (West), Linker Arm/Bein bei +X (Ost).
 private let andyParts: [AndyPartDef] = [
     AndyPartDef(bodyPart: .head, scnSize: SCNVector3(1, 1, 1), position: SCNVector3(0, 3.25, 0), name: "head"),
     AndyPartDef(bodyPart: .body, scnSize: SCNVector3(1, 1.5, 0.5), position: SCNVector3(0, 2, 0), name: "body"),
-    AndyPartDef(bodyPart: .rightArm, scnSize: SCNVector3(0.5, 1.5, 0.5), position: SCNVector3(0.75, 2, 0), name: "rightArm"),
-    AndyPartDef(bodyPart: .leftArm, scnSize: SCNVector3(0.5, 1.5, 0.5), position: SCNVector3(-0.75, 2, 0), name: "leftArm"),
-    AndyPartDef(bodyPart: .rightLeg, scnSize: SCNVector3(0.5, 1.5, 0.5), position: SCNVector3(0.25, 0.5, 0), name: "rightLeg"),
-    AndyPartDef(bodyPart: .leftLeg, scnSize: SCNVector3(0.5, 1.5, 0.5), position: SCNVector3(-0.25, 0.5, 0), name: "leftLeg"),
+    AndyPartDef(bodyPart: .rightArm, scnSize: SCNVector3(0.5, 1.5, 0.5), position: SCNVector3(-0.75, 2, 0), name: "rightArm"),
+    AndyPartDef(bodyPart: .leftArm, scnSize: SCNVector3(0.5, 1.5, 0.5), position: SCNVector3(0.75, 2, 0), name: "leftArm"),
+    AndyPartDef(bodyPart: .rightLeg, scnSize: SCNVector3(0.5, 1.5, 0.5), position: SCNVector3(-0.25, 0.5, 0), name: "rightLeg"),
+    AndyPartDef(bodyPart: .leftLeg, scnSize: SCNVector3(0.5, 1.5, 0.5), position: SCNVector3(0.25, 0.5, 0), name: "leftLeg"),
 ]
 
 // MARK: - Non-Paintable Andy View
