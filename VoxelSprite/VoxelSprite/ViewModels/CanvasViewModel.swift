@@ -84,6 +84,9 @@ class CanvasViewModel: ObservableObject {
     /// Ergebnis der letzten Tile-Seamless-Prüfung
     @Published var tileCheckResult: PixelCanvas.TileCheckResult?
 
+    /// Toleranter Vergleich: ΔRGBA ≤ 2 statt exakt
+    @Published var tileCheckTolerant: Bool = false
+
     // MARK: - Zoom
 
     @Published var zoomScale: CGFloat = 1.0
@@ -261,10 +264,12 @@ class CanvasViewModel: ObservableObject {
         case .line:
             guard let start = shapeStartPoint, var canvas = preShapeCanvas else { return }
             drawLine(canvas: &canvas, x0: start.x, y0: start.y, x1: x, y1: y, color: currentColor)
+            if wrapPaintingEnabled { applyEdgeWrapping(canvas: &canvas) }
             updateCurrentCanvas(canvas)
         case .rectangle:
             guard let start = shapeStartPoint, var canvas = preShapeCanvas else { return }
             drawRectangle(canvas: &canvas, x0: start.x, y0: start.y, x1: x, y1: y, color: currentColor)
+            if wrapPaintingEnabled { applyEdgeWrapping(canvas: &canvas) }
             updateCurrentCanvas(canvas)
         default:
             applyTool(at: x, y: y)
@@ -276,10 +281,12 @@ class CanvasViewModel: ObservableObject {
         case .line:
             guard let start = shapeStartPoint, var canvas = preShapeCanvas else { return }
             drawLine(canvas: &canvas, x0: start.x, y0: start.y, x1: x, y1: y, color: currentColor)
+            if wrapPaintingEnabled { applyEdgeWrapping(canvas: &canvas) }
             updateCurrentCanvas(canvas)
         case .rectangle:
             guard let start = shapeStartPoint, var canvas = preShapeCanvas else { return }
             drawRectangle(canvas: &canvas, x0: start.x, y0: start.y, x1: x, y1: y, color: currentColor)
+            if wrapPaintingEnabled { applyEdgeWrapping(canvas: &canvas) }
             updateCurrentCanvas(canvas)
         default:
             break
@@ -305,7 +312,8 @@ class CanvasViewModel: ObservableObject {
                 applyWrappedPixels(canvas: &canvas, x: x, y: y, color: nil)
             }
         case .fill:
-            floodFill(canvas: &canvas, x: x, y: y, newColor: currentColor)
+            floodFill(canvas: &canvas, x: x, y: y, newColor: currentColor, wrap: wrapPaintingEnabled)
+            if wrapPaintingEnabled { applyEdgeWrapping(canvas: &canvas) }
         case .eyedropper:
             if let color = canvas.pixel(at: x, y: y) {
                 currentColor = color
@@ -319,7 +327,7 @@ class CanvasViewModel: ObservableObject {
         updateCurrentCanvas(canvas)
     }
 
-    /// Spiegelt Pixel auf die gegenüberliegende Kante (für nahtlose Texturen)
+    /// Spiegelt Pixel auf die gegenüberliegende Kante (für nahtlose Texturen, einzelner Pixel)
     private func applyWrappedPixels(canvas: inout PixelCanvas, x: Int, y: Int, color: Color?) {
         let w = canvas.width, h = canvas.height
         // Wenn am linken/rechten Rand: auch auf der anderen Seite zeichnen
@@ -335,22 +343,64 @@ class CanvasViewModel: ObservableObject {
         if x == w - 1 && y == h - 1 { canvas.setPixel(at: 0, y: 0, color: color) }
     }
 
+    /// Spiegelt alle Rand-Pixel auf die gegenüberliegende Kante (für Linie/Rechteck/Fill)
+    private func applyEdgeWrapping(canvas: inout PixelCanvas) {
+        let w = canvas.width, h = canvas.height
+        // Links ↔ Rechts
+        for y in 0..<h {
+            let leftColor = canvas.pixel(at: 0, y: y)
+            let rightColor = canvas.pixel(at: w - 1, y: y)
+            if leftColor != nil { canvas.setPixel(at: w - 1, y: y, color: leftColor) }
+            if rightColor != nil { canvas.setPixel(at: 0, y: y, color: rightColor) }
+        }
+        // Oben ↔ Unten
+        for x in 0..<w {
+            let topColor = canvas.pixel(at: x, y: 0)
+            let bottomColor = canvas.pixel(at: x, y: h - 1)
+            if topColor != nil { canvas.setPixel(at: x, y: h - 1, color: topColor) }
+            if bottomColor != nil { canvas.setPixel(at: x, y: 0, color: bottomColor) }
+        }
+    }
+
     // MARK: - Flood Fill
 
-    private func floodFill(canvas: inout PixelCanvas, x: Int, y: Int, newColor: Color) {
+    private func floodFill(canvas: inout PixelCanvas, x: Int, y: Int, newColor: Color, wrap: Bool = false) {
         let targetColor = canvas.pixel(at: x, y: y)
         if targetColor == newColor { return }
 
         var stack: [(Int, Int)] = [(x, y)]
+        let w = canvas.width, h = canvas.height
 
         while let (cx, cy) = stack.popLast() {
-            guard canvas.isValid(x: cx, y: cy) else { continue }
+            guard canvas.isValid(x: cx, y: cy) else {
+                // Wrap-Modus: Koordinaten auf gegenüberliegende Seite mappen
+                if wrap {
+                    let wx = ((cx % w) + w) % w
+                    let wy = ((cy % h) + h) % h
+                    guard canvas.pixel(at: wx, y: wy) == targetColor else { continue }
+                    canvas.setPixel(at: wx, y: wy, color: newColor)
+                    stack.append((wx + 1, wy))
+                    stack.append((wx - 1, wy))
+                    stack.append((wx, wy + 1))
+                    stack.append((wx, wy - 1))
+                }
+                continue
+            }
             guard canvas.pixel(at: cx, y: cy) == targetColor else { continue }
             canvas.setPixel(at: cx, y: cy, color: newColor)
-            stack.append((cx + 1, cy))
-            stack.append((cx - 1, cy))
-            stack.append((cx, cy + 1))
-            stack.append((cx, cy - 1))
+
+            if wrap {
+                // Im Wrap-Modus: Koordinaten wrappen statt Grenzen prüfen
+                stack.append((cx + 1 < w ? cx + 1 : 0, cy))
+                stack.append((cx - 1 >= 0 ? cx - 1 : w - 1, cy))
+                stack.append((cx, cy + 1 < h ? cy + 1 : 0))
+                stack.append((cx, cy - 1 >= 0 ? cy - 1 : h - 1))
+            } else {
+                stack.append((cx + 1, cy))
+                stack.append((cx - 1, cy))
+                stack.append((cx, cy + 1))
+                stack.append((cx, cy - 1))
+            }
         }
     }
 
@@ -506,7 +556,7 @@ class CanvasViewModel: ObservableObject {
     // MARK: - Tile-Seamless Check
 
     func runTileCheck() {
-        tileCheckResult = currentCanvas.checkTileSeamless()
+        tileCheckResult = currentCanvas.checkTileSeamless(tolerant: tileCheckTolerant)
     }
 
     func clearTileCheck() {

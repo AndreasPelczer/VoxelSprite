@@ -133,6 +133,15 @@ struct ToolBarView: View {
                 canvasVM.runTileCheck()
             }
 
+            // Toleranz-Toggle (exact vs tolerant)
+            Toggle(isOn: $canvasVM.tileCheckTolerant) {
+                Text("≈")
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+            }
+            .toggleStyle(.button)
+            .controlSize(.small)
+            .help("Toleranter Vergleich (ΔRGBA ≤ 2%)")
+
             // MARK: - Palette Reduce
 
             Button {
@@ -288,6 +297,10 @@ struct ToolBarView: View {
                 .controlSize(.small)
 
             Divider()
+
+            Text("Rückgängig mit ⌘Z")
+                .font(.system(size: 9))
+                .foregroundStyle(.secondary)
 
             ForEach(PresetPalette.allCases, id: \.self) { preset in
                 Button {

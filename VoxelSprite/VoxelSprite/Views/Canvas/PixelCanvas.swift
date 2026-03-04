@@ -233,13 +233,14 @@ struct PixelCanvas {
 
     /// Prüft ob die Textur nahtlos kachelt.
     /// Vergleicht linke ↔ rechte und obere ↔ untere Kante.
-    func checkTileSeamless() -> TileCheckResult {
+    /// `tolerant`: true = ΔRGBA ≤ 0.02, false = exakte Übereinstimmung
+    func checkTileSeamless(tolerant: Bool = false) -> TileCheckResult {
         var result = TileCheckResult()
 
         for y in 0..<height {
             let leftColor = pixel(at: 0, y: y)
             let rightColor = pixel(at: width - 1, y: y)
-            if !colorsMatch(leftColor, rightColor) {
+            if !colorsMatch(leftColor, rightColor, tolerant: tolerant) {
                 result.horizontalMismatches.append((x: 0, y: y))
             }
         }
@@ -247,7 +248,7 @@ struct PixelCanvas {
         for x in 0..<width {
             let topColor = pixel(at: x, y: 0)
             let bottomColor = pixel(at: x, y: height - 1)
-            if !colorsMatch(topColor, bottomColor) {
+            if !colorsMatch(topColor, bottomColor, tolerant: tolerant) {
                 result.verticalMismatches.append((x: x, y: 0))
             }
         }
@@ -255,10 +256,14 @@ struct PixelCanvas {
         return result
     }
 
-    private func colorsMatch(_ a: Color?, _ b: Color?) -> Bool {
+    private func colorsMatch(_ a: Color?, _ b: Color?, tolerant: Bool) -> Bool {
         if a == nil && b == nil { return true }
         guard let a = a, let b = b,
               let ca = a.cgColorComponents, let cb = b.cgColorComponents else { return false }
+        if !tolerant {
+            // Exakter Vergleich (premultiplied-sicher: Alpha muss identisch sein)
+            return ca.r == cb.r && ca.g == cb.g && ca.b == cb.b && ca.a == cb.a
+        }
         let t: CGFloat = 0.02
         return abs(ca.r - cb.r) < t && abs(ca.g - cb.g) < t
             && abs(ca.b - cb.b) < t && abs(ca.a - cb.a) < t
@@ -266,13 +271,28 @@ struct PixelCanvas {
 
     // MARK: - Palette Reduce
 
+    /// sRGB → Linear Konvertierung
+    private static func sRGBToLinear(_ c: CGFloat) -> CGFloat {
+        c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+    }
+
+    /// Linear → sRGB Konvertierung
+    private static func linearToSRGB(_ c: CGFloat) -> CGFloat {
+        c <= 0.0031308 ? c * 12.92 : 1.055 * pow(c, 1.0 / 2.4) - 0.055
+    }
+
     /// Reduziert alle Farben auf die nächste Farbe aus der Palette.
     /// Optional mit Floyd-Steinberg Dithering.
+    /// Transparente Pixel bleiben transparent.
+    /// Distanz-Berechnung in linearem RGB für visuell korrekte Ergebnisse.
     func reducedToPalette(_ palette: [Color], dithering: Bool = false) -> PixelCanvas {
         let pc: [(r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat)] = palette.compactMap {
             $0.cgColorComponents
         }
         guard !pc.isEmpty else { return self }
+
+        // Palette in linearem RGB vorberechnen
+        let linearPC = pc.map { (r: Self.sRGBToLinear($0.r), g: Self.sRGBToLinear($0.g), b: Self.sRGBToLinear($0.b)) }
 
         var result = PixelCanvas(width: width, height: height)
 
@@ -284,26 +304,35 @@ struct PixelCanvas {
                 guard let color = pixel(at: x, y: y),
                       let c = color.cgColorComponents else { continue }
 
-                var r = c.r, g = c.g, b = c.b
+                // Fast transparente Pixel überspringen (Alpha < 1%)
+                if c.a < 0.01 { continue }
+
+                // In linearen Farbraum konvertieren
+                var r = Self.sRGBToLinear(c.r)
+                var g = Self.sRGBToLinear(c.g)
+                var b = Self.sRGBToLinear(c.b)
+
                 if dithering {
                     r = max(0, min(1, r + errR[y][x + 1]))
                     g = max(0, min(1, g + errG[y][x + 1]))
                     b = max(0, min(1, b + errB[y][x + 1]))
                 }
 
-                // Nächste Farbe finden (euklidische Distanz)
+                // Nächste Farbe finden (euklidische Distanz in linearem RGB)
                 var bestDist: CGFloat = .infinity
                 var bestIdx = 0
-                for (i, p) in pc.enumerated() {
-                    let d = (r - p.r) * (r - p.r) + (g - p.g) * (g - p.g) + (b - p.b) * (b - p.b)
+                for (i, lp) in linearPC.enumerated() {
+                    let d = (r - lp.r) * (r - lp.r) + (g - lp.g) * (g - lp.g) + (b - lp.b) * (b - lp.b)
                     if d < bestDist { bestDist = d; bestIdx = i }
                 }
 
                 let n = pc[bestIdx]
+                let nLin = linearPC[bestIdx]
+                // Ergebnis zurück in sRGB, Alpha beibehalten
                 result.setPixel(at: x, y: y, color: Color(red: n.r, green: n.g, blue: n.b, opacity: c.a))
 
                 if dithering {
-                    let eR = r - n.r, eG = g - n.g, eB = b - n.b
+                    let eR = r - nLin.r, eG = g - nLin.g, eB = b - nLin.b
                     // Floyd-Steinberg Distribution: 7/16, 3/16, 5/16, 1/16
                     errR[y][x + 2]     += eR * 7/16; errR[y + 1][x] += eR * 3/16
                     errR[y + 1][x + 1] += eR * 5/16; errR[y + 1][x + 2] += eR * 1/16
