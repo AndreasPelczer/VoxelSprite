@@ -90,7 +90,7 @@ struct IsometricPreviewView: View {
                         .foregroundStyle(minecraftLighting ? teal : .secondary)
                 }
                 .buttonStyle(.plain)
-                .help("Minecraft Lighting")
+                .help("Minecraft Lighting (approx.) – nur Preview")
             }
 
             // 3D Preview Canvas
@@ -258,13 +258,29 @@ struct IsometricPreviewView: View {
 
     // MARK: - Hilfsfunktionen
 
-    /// Dunkelt eine Farbe ab (für 3D-Effekt auf Seitenflächen)
+    /// sRGB → Linear
+    private func sRGBToLinear(_ c: Double) -> Double {
+        c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+    }
+
+    /// Linear → sRGB
+    private func linearToSRGB(_ c: Double) -> Double {
+        c <= 0.0031308 ? c * 12.92 : 1.055 * pow(c, 1.0 / 2.4) - 0.055
+    }
+
+    /// Dunkelt eine Farbe ab (für 3D-Effekt auf Seitenflächen).
+    /// Berechnung in linearem Farbraum für gamma-korrekte Ergebnisse.
     private func darken(_ color: Color, by amount: Double) -> Color {
         guard let c = color.cgColorComponents else { return color }
+        let multiplier = max(0, 1.0 - amount)
+        // In linear space multiplizieren, dann zurück in sRGB
+        let r = linearToSRGB(sRGBToLinear(c.r) * multiplier)
+        let g = linearToSRGB(sRGBToLinear(c.g) * multiplier)
+        let b = linearToSRGB(sRGBToLinear(c.b) * multiplier)
         return Color(
-            red: max(0, c.r - amount),
-            green: max(0, c.g - amount),
-            blue: max(0, c.b - amount),
+            red: max(0, min(1, r)),
+            green: max(0, min(1, g)),
+            blue: max(0, min(1, b)),
             opacity: c.a
         )
     }
