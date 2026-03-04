@@ -18,7 +18,12 @@ struct StevePreviewView: View {
     var showGrid: Bool = false
 
     var body: some View {
-        SteveSceneView(project: skinVM.project, showGrid: showGrid)
+        SteveSceneView(
+            project: skinVM.project,
+            showGrid: showGrid,
+            activeBodyPart: skinVM.activeBodyPart,
+            activeFace: skinVM.activeFace
+        )
             .frame(maxWidth: .infinity)
             .aspectRatio(0.7, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -61,21 +66,23 @@ private let steveParts: [StevePartDef] = [
 struct SteveSceneView: NSViewRepresentable {
     let project: SkinProject
     var showGrid: Bool = false
+    var activeBodyPart: SkinBodyPart = .head
+    var activeFace: SkinFace = .front
 
     func makeNSView(context: Context) -> SCNView {
         let scnView = SCNView()
         scnView.allowsCameraControl = true
         scnView.backgroundColor = NSColor(red: 0.05, green: 0.05, blue: 0.08, alpha: 1)
         scnView.antialiasingMode = .none
-        scnView.scene = Self.createScene(project: project, showGrid: showGrid)
+        scnView.scene = Self.createScene(project: project, showGrid: showGrid, activeBodyPart: activeBodyPart, activeFace: activeFace)
         return scnView
     }
 
     func updateNSView(_ scnView: SCNView, context: Context) {
-        Self.updateMaterials(scene: scnView.scene, project: project, showGrid: showGrid)
+        Self.updateMaterials(scene: scnView.scene, project: project, showGrid: showGrid, activeBodyPart: activeBodyPart, activeFace: activeFace)
     }
 
-    static func createScene(project: SkinProject, showGrid: Bool) -> SCNScene {
+    static func createScene(project: SkinProject, showGrid: Bool, activeBodyPart: SkinBodyPart = .head, activeFace: SkinFace = .front) -> SCNScene {
         let scene = SCNScene()
         scene.background.contents = NSColor(red: 0.05, green: 0.05, blue: 0.08, alpha: 1)
 
@@ -87,11 +94,16 @@ struct SteveSceneView: NSViewRepresentable {
                 length: CGFloat(part.scnSize.z),
                 chamferRadius: 0
             )
-            box.materials = Self.materialsForPart(part.bodyPart, project: project, showGrid: showGrid)
+            let isActive = part.bodyPart == activeBodyPart
+            box.materials = Self.materialsForPart(part.bodyPart, project: project, showGrid: showGrid, activeBodyPart: activeBodyPart, activeFace: activeFace)
 
             let node = SCNNode(geometry: box)
             node.name = part.name
             node.position = part.position
+            // Nicht-aktive Teile leicht abdunkeln
+            if !isActive {
+                node.opacity = 0.7
+            }
             scene.rootNode.addChildNode(node)
         }
 
@@ -125,22 +137,27 @@ struct SteveSceneView: NSViewRepresentable {
         return scene
     }
 
-    static func updateMaterials(scene: SCNScene?, project: SkinProject, showGrid: Bool) {
+    static func updateMaterials(scene: SCNScene?, project: SkinProject, showGrid: Bool, activeBodyPart: SkinBodyPart = .head, activeFace: SkinFace = .front) {
         guard let scene = scene else { return }
         for part in steveParts {
             if let node = scene.rootNode.childNode(withName: part.name, recursively: true),
                let box = node.geometry as? SCNBox {
-                box.materials = materialsForPart(part.bodyPart, project: project, showGrid: showGrid)
+                let isActive = part.bodyPart == activeBodyPart
+                box.materials = materialsForPart(part.bodyPart, project: project, showGrid: showGrid, activeBodyPart: activeBodyPart, activeFace: activeFace)
+                node.opacity = isActive ? 1.0 : 0.7
             }
         }
     }
 
     /// Erzeugt 6 Materials für ein Körperteil.
     /// SCNBox Reihenfolge: +X(Right), -X(Left), +Y(Top), -Y(Bottom), +Z(Front), -Z(Back)
-    static func materialsForPart(_ bodyPart: SkinBodyPart, project: SkinProject, showGrid: Bool = false) -> [SCNMaterial] {
+    static func materialsForPart(_ bodyPart: SkinBodyPart, project: SkinProject, showGrid: Bool = false, activeBodyPart: SkinBodyPart = .head, activeFace: SkinFace = .front) -> [SCNMaterial] {
         // SCNBox face order: +X, -X, +Y, -Y, +Z, -Z
         // Mapped to SkinFace: right, left, top, bottom, front, back
         let faceOrder: [SkinFace] = [.right, .left, .top, .bottom, .front, .back]
+        let isActivePart = bodyPart == activeBodyPart
+        // Highlight-Farbe für aktive Seite (Cyan-Leuchten)
+        let highlightColor = NSColor(red: 0.0, green: 0.8, blue: 1.0, alpha: 1.0)
 
         return faceOrder.map { face in
             let material = SCNMaterial()
@@ -166,6 +183,11 @@ struct SteveSceneView: NSViewRepresentable {
             material.diffuse.wrapT = .clamp
             material.lightingModel = .blinn
             material.isDoubleSided = false
+            // Aktive Seite des aktiven Körperteils hervorheben
+            if isActivePart && face == activeFace {
+                material.emission.contents = highlightColor
+                material.emission.intensity = 0.3
+            }
             return material
         }
     }
@@ -194,21 +216,23 @@ struct SteveSceneView: NSViewRepresentable {
 struct SteveSceneView: UIViewRepresentable {
     let project: SkinProject
     var showGrid: Bool = false
+    var activeBodyPart: SkinBodyPart = .head
+    var activeFace: SkinFace = .front
 
     func makeUIView(context: Context) -> SCNView {
         let scnView = SCNView()
         scnView.allowsCameraControl = true
         scnView.backgroundColor = UIColor(red: 0.05, green: 0.05, blue: 0.08, alpha: 1)
         scnView.antialiasingMode = .none
-        scnView.scene = Self.createScene(project: project, showGrid: showGrid)
+        scnView.scene = Self.createScene(project: project, showGrid: showGrid, activeBodyPart: activeBodyPart, activeFace: activeFace)
         return scnView
     }
 
     func updateUIView(_ scnView: SCNView, context: Context) {
-        Self.updateMaterials(scene: scnView.scene, project: project, showGrid: showGrid)
+        Self.updateMaterials(scene: scnView.scene, project: project, showGrid: showGrid, activeBodyPart: activeBodyPart, activeFace: activeFace)
     }
 
-    static func createScene(project: SkinProject, showGrid: Bool) -> SCNScene {
+    static func createScene(project: SkinProject, showGrid: Bool, activeBodyPart: SkinBodyPart = .head, activeFace: SkinFace = .front) -> SCNScene {
         let scene = SCNScene()
         scene.background.contents = UIColor(red: 0.05, green: 0.05, blue: 0.08, alpha: 1)
 
@@ -219,10 +243,14 @@ struct SteveSceneView: UIViewRepresentable {
                 length: CGFloat(part.scnSize.z),
                 chamferRadius: 0
             )
-            box.materials = Self.materialsForPart(part.bodyPart, project: project, showGrid: showGrid)
+            let isActive = part.bodyPart == activeBodyPart
+            box.materials = Self.materialsForPart(part.bodyPart, project: project, showGrid: showGrid, activeBodyPart: activeBodyPart, activeFace: activeFace)
             let node = SCNNode(geometry: box)
             node.name = part.name
             node.position = part.position
+            if !isActive {
+                node.opacity = 0.7
+            }
             scene.rootNode.addChildNode(node)
         }
 
@@ -250,18 +278,22 @@ struct SteveSceneView: UIViewRepresentable {
         return scene
     }
 
-    static func updateMaterials(scene: SCNScene?, project: SkinProject, showGrid: Bool) {
+    static func updateMaterials(scene: SCNScene?, project: SkinProject, showGrid: Bool, activeBodyPart: SkinBodyPart = .head, activeFace: SkinFace = .front) {
         guard let scene = scene else { return }
         for part in steveParts {
             if let node = scene.rootNode.childNode(withName: part.name, recursively: true),
                let box = node.geometry as? SCNBox {
-                box.materials = materialsForPart(part.bodyPart, project: project, showGrid: showGrid)
+                let isActive = part.bodyPart == activeBodyPart
+                box.materials = materialsForPart(part.bodyPart, project: project, showGrid: showGrid, activeBodyPart: activeBodyPart, activeFace: activeFace)
+                node.opacity = isActive ? 1.0 : 0.7
             }
         }
     }
 
-    static func materialsForPart(_ bodyPart: SkinBodyPart, project: SkinProject, showGrid: Bool = false) -> [SCNMaterial] {
+    static func materialsForPart(_ bodyPart: SkinBodyPart, project: SkinProject, showGrid: Bool = false, activeBodyPart: SkinBodyPart = .head, activeFace: SkinFace = .front) -> [SCNMaterial] {
         let faceOrder: [SkinFace] = [.right, .left, .top, .bottom, .front, .back]
+        let isActivePart = bodyPart == activeBodyPart
+        let highlightColor = UIColor(red: 0.0, green: 0.8, blue: 1.0, alpha: 1.0)
         return faceOrder.map { face in
             let material = SCNMaterial()
             let baseCanvas = project.extractRegion(bodyPart: bodyPart, face: face, layer: .base)
@@ -271,6 +303,10 @@ struct SteveSceneView: UIViewRepresentable {
             material.diffuse.magnificationFilter = .nearest
             material.diffuse.minificationFilter = .nearest
             material.lightingModel = .blinn
+            if isActivePart && face == activeFace {
+                material.emission.contents = highlightColor
+                material.emission.intensity = 0.3
+            }
             return material
         }
     }

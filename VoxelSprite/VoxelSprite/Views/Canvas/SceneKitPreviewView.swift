@@ -21,7 +21,7 @@ struct SceneKitPreviewView: View {
     var showGrid: Bool = false
 
     var body: some View {
-        BlockCubeSceneView(project: blockVM.project, showGrid: showGrid)
+        BlockCubeSceneView(project: blockVM.project, showGrid: showGrid, activeFace: blockVM.activeFaceType)
             .frame(maxWidth: .infinity)
             .aspectRatio(1, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -39,6 +39,7 @@ struct SceneKitPreviewView: View {
 struct BlockCubeSceneView: NSViewRepresentable {
     let project: BlockProject
     var showGrid: Bool = false
+    var activeFace: FaceType = .north
 
     func makeNSView(context: Context) -> SCNView {
         let scnView = SCNView()
@@ -52,7 +53,7 @@ struct BlockCubeSceneView: NSViewRepresentable {
     func updateNSView(_ scnView: SCNView, context: Context) {
         guard let cubeNode = scnView.scene?.rootNode.childNode(withName: "cube", recursively: true),
               let box = cubeNode.geometry as? SCNBox else { return }
-        box.materials = Self.createMaterials(project: project, showGrid: showGrid)
+        box.materials = Self.createMaterials(project: project, showGrid: showGrid, activeFace: activeFace)
     }
 
     static func createScene() -> SCNScene {
@@ -97,8 +98,10 @@ struct BlockCubeSceneView: NSViewRepresentable {
 
     /// Erzeugt 6 Materials für die Würfelflächen.
     /// SCNBox Reihenfolge: +X(East), -X(West), +Y(Top), -Y(Bottom), +Z(North), -Z(South)
-    static func createMaterials(project: BlockProject, showGrid: Bool) -> [SCNMaterial] {
+    static func createMaterials(project: BlockProject, showGrid: Bool, activeFace: FaceType = .north) -> [SCNMaterial] {
         let faceOrder: [FaceType] = [.east, .west, .top, .bottom, .north, .south]
+        // Highlight-Farbe für aktive Seite (Cyan-Leuchten)
+        let highlightColor = NSColor(red: 0.0, green: 0.8, blue: 1.0, alpha: 1.0)
         return faceOrder.map { faceType in
             let material = SCNMaterial()
             let canvas = project.canvas(for: faceType)
@@ -111,6 +114,11 @@ struct BlockCubeSceneView: NSViewRepresentable {
             }
             material.lightingModel = .blinn
             material.isDoubleSided = false
+            // Aktive Seite mit Emission hervorheben
+            if faceType == activeFace {
+                material.emission.contents = highlightColor
+                material.emission.intensity = 0.3
+            }
             return material
         }
     }
@@ -121,6 +129,7 @@ struct BlockCubeSceneView: NSViewRepresentable {
 struct BlockCubeSceneView: UIViewRepresentable {
     let project: BlockProject
     var showGrid: Bool = false
+    var activeFace: FaceType = .north
 
     func makeUIView(context: Context) -> SCNView {
         let scnView = SCNView()
@@ -134,7 +143,7 @@ struct BlockCubeSceneView: UIViewRepresentable {
     func updateUIView(_ scnView: SCNView, context: Context) {
         guard let cubeNode = scnView.scene?.rootNode.childNode(withName: "cube", recursively: true),
               let box = cubeNode.geometry as? SCNBox else { return }
-        box.materials = Self.createMaterials(project: project, showGrid: showGrid)
+        box.materials = Self.createMaterials(project: project, showGrid: showGrid, activeFace: activeFace)
     }
 
     static func createScene() -> SCNScene {
@@ -171,8 +180,9 @@ struct BlockCubeSceneView: UIViewRepresentable {
         return scene
     }
 
-    static func createMaterials(project: BlockProject, showGrid: Bool) -> [SCNMaterial] {
+    static func createMaterials(project: BlockProject, showGrid: Bool, activeFace: FaceType = .north) -> [SCNMaterial] {
         let faceOrder: [FaceType] = [.east, .west, .top, .bottom, .north, .south]
+        let highlightColor = UIColor(red: 0.0, green: 0.8, blue: 1.0, alpha: 1.0)
         return faceOrder.map { faceType in
             let material = SCNMaterial()
             let canvas = project.canvas(for: faceType)
@@ -185,6 +195,10 @@ struct BlockCubeSceneView: UIViewRepresentable {
             }
             material.lightingModel = .blinn
             material.isDoubleSided = false
+            if faceType == activeFace {
+                material.emission.contents = highlightColor
+                material.emission.intensity = 0.3
+            }
             return material
         }
     }
