@@ -42,7 +42,7 @@ struct ContentView: View {
     var body: some View {
         mainContent
         #if os(macOS)
-        .frame(minWidth: 900, minHeight: 640)
+        .frame(minWidth: 1100, minHeight: 640)
         #endif
         .background(Color(red: 0.1, green: 0.1, blue: 0.14))
         .preferredColorScheme(.dark)
@@ -224,6 +224,7 @@ struct ContentView: View {
                 .padding(16)
             }
             .frame(width: 320)
+            .layoutPriority(1)
             .background(.background.opacity(0.5))
         }
     }
