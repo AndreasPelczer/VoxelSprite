@@ -125,8 +125,8 @@ struct SceneKitPreviewView: View {
     // MARK: - Paint Handling
 
     /// SCNBox Face-Index → FaceType Mapping
-    /// SCNBox: 0=+X(East), 1=-X(West), 2=+Y(Top), 3=-Y(Bottom), 4=+Z(South), 5=-Z(North)
-    private static let boxFaceToFaceType: [FaceType] = [.east, .west, .top, .bottom, .south, .north]
+    /// SCNBox: 0=+X(East), 1=-X(West), 2=+Y(Top), 3=-Y(Bottom), 4=+Z(North), 5=-Z(South)
+    private static let boxFaceToFaceType: [FaceType] = [.east, .west, .top, .bottom, .north, .south]
 
     private func handlePaintHit(nodeName: String, faceIndex: Int, uv: CGPoint) {
         guard nodeName == "cube",
@@ -166,7 +166,7 @@ struct SceneKitPreviewView: View {
     // MARK: - Materials
 
     static func createMaterials(project: BlockProject, showGrid: Bool, activeFace: FaceType? = nil) -> [SCNMaterial] {
-        let faceOrder: [FaceType] = [.east, .west, .top, .bottom, .south, .north]
+        let faceOrder: [FaceType] = [.east, .west, .top, .bottom, .north, .south]
         return faceOrder.map { faceType in
             let material = SCNMaterial()
             let canvas = project.canvas(for: faceType)
