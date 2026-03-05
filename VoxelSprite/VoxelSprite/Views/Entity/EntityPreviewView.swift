@@ -95,7 +95,7 @@ struct EntityPreviewView: View {
         let dx = cam.position.x - cam.lookAt.x
         let dy = cam.position.y - cam.lookAt.y
         let dz = cam.position.z - cam.lookAt.z
-        orbitState.distance = sqrt(dx*dx + dy*dy + dz*dz)
+        orbitState.distance = Float(sqrt(dx*dx + dy*dy + dz*dz))
         if let camNode = scene.rootNode.childNode(withName: "camera", recursively: true) {
             orbitState.updateCamera(camNode)
         }
@@ -137,7 +137,7 @@ struct EntityPreviewView: View {
         let dx = cam.position.x - cam.lookAt.x
         let dy = cam.position.y - cam.lookAt.y
         let dz = cam.position.z - cam.lookAt.z
-        orbitState.distance = sqrt(dx*dx + dy*dy + dz*dz)
+        orbitState.distance = Float(sqrt(dx*dx + dy*dy + dz*dz))
         orbitState.updateCamera(cameraNode)
 
         let ambientNode = SCNNode()
