@@ -275,6 +275,30 @@ class CanvasViewModel: ObservableObject {
         }
     }
 
+    // MARK: - DEBUG Face Color Index
+
+    /// Returns the debug color index (0-5) for the currently active face, matching the 3D debug colors.
+    /// Block faceOrder: [.east, .west, .top, .bottom, .north, .south]
+    /// Skin faceOrder: [.right, .left, .top, .bottom, .front, .back]
+    var debugFaceColorIndex: Int? {
+        switch editorMode {
+        case .block:
+            let blockFaceOrder: [FaceType] = [.east, .west, .top, .bottom, .north, .south]
+            guard let blockVM = blockViewModel else { return nil }
+            return blockFaceOrder.firstIndex(of: blockVM.activeFaceType)
+        case .skin:
+            let skinFaceOrder: [SkinFace] = [.right, .left, .top, .bottom, .front, .back]
+            guard let skinVM = skinViewModel else { return nil }
+            return skinFaceOrder.firstIndex(of: skinVM.activeFace)
+        case .entity:
+            let entityFaceOrder: [SkinFace] = [.right, .left, .top, .bottom, .front, .back]
+            guard let entityVM = entityViewModel else { return nil }
+            return entityFaceOrder.firstIndex(of: entityVM.activeFace)
+        default:
+            return nil
+        }
+    }
+
     // MARK: - Face Overlay Helpers
 
     /// Das gegenüberliegende Face für automatisches Overlay (nur Block-Modus)
