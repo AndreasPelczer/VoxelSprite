@@ -33,9 +33,12 @@ class OrbitCameraState: ObservableObject {
 
     func position() -> SCNVector3 {
         let clampedElev = max(-Float.pi / 2 + 0.01, min(Float.pi / 2 - 0.01, elevation))
-        let x = center.x + distance * cos(clampedElev) * sin(azimuth)
-        let y = center.y + distance * sin(clampedElev)
-        let z = center.z + distance * cos(clampedElev) * cos(azimuth)
+        let dx = distance * cos(clampedElev) * sin(azimuth)
+        let dy = distance * sin(clampedElev)
+        let dz = distance * cos(clampedElev) * cos(azimuth)
+        let x = Float(center.x) + dx
+        let y = Float(center.y) + dy
+        let z = Float(center.z) + dz
         return SCNVector3(x, y, z)
     }
 
