@@ -78,30 +78,10 @@ struct PixelCanvasView: View {
         // Selection
         let selection = canvasVM.selection
 
-        // DEBUG: Face-Farbe
-        let debugColorIndex = canvasVM.debugFaceColorIndex
-
         Canvas { context, _ in
 
             // 1. Schachbrett-Hintergrund
             drawCheckerboard(context: context, width: cw, height: ch, cellSize: cs)
-
-            // DEBUG: Farbige Fläche passend zur 3D Debug-Farbe
-            if let idx = debugColorIndex {
-                let debugColors: [Color] = [
-                    .red,       // 0
-                    .green,     // 1
-                    .blue,      // 2
-                    .yellow,    // 3
-                    .cyan,      // 4
-                    .purple,    // 5 (Magenta)
-                ]
-                let totalW = CGFloat(cw) * cs
-                let totalH = CGFloat(ch) * cs
-                context.opacity = 0.4
-                context.fill(Path(CGRect(x: 0, y: 0, width: totalW, height: totalH)), with: .color(debugColors[idx]))
-                context.opacity = 1.0
-            }
 
             // 2. Face / Layer Overlay
             if let overlay = overlayCanvas {

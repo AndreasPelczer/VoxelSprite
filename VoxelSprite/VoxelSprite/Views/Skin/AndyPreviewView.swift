@@ -182,51 +182,38 @@ struct AndyPreviewView: View {
 
     // MARK: - Materials
 
-    // DEBUG: Nummerierte Farbflächen um SCNBox Face-Reihenfolge zu bestimmen
-    private static func debugImage(index: Int, size: Int = 64) -> CGImage? {
-        let colors: [(r: CGFloat, g: CGFloat, b: CGFloat)] = [
-            (1.0, 0.0, 0.0),  // 0 = Rot
-            (0.0, 1.0, 0.0),  // 1 = Grün
-            (0.0, 0.0, 1.0),  // 2 = Blau
-            (1.0, 1.0, 0.0),  // 3 = Gelb
-            (0.0, 1.0, 1.0),  // 4 = Cyan
-            (1.0, 0.0, 1.0),  // 5 = Magenta
-        ]
-        let c = colors[index]
-        guard let ctx = CGContext(
-            data: nil, width: size, height: size,
-            bitsPerComponent: 8, bytesPerRow: size * 4,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else { return nil }
-        ctx.setFillColor(red: c.r, green: c.g, blue: c.b, alpha: 1.0)
-        ctx.fill(CGRect(x: 0, y: 0, width: size, height: size))
-        // Schwarze Blöcke als Zähler für die Nummer
-        ctx.setFillColor(red: 0, green: 0, blue: 0, alpha: 1)
-        let numSize = size / 2
-        let offset = size / 4
-        for i in 0...index {
-            let bx = offset + (i % 3) * (numSize / 3)
-            let by = offset + (i / 3) * (numSize / 3)
-            ctx.fill(CGRect(x: bx, y: by, width: numSize / 4, height: numSize / 4))
-        }
-        return ctx.makeImage()
-    }
-
     static func materialsForPart(_ bodyPart: SkinBodyPart, project: SkinProject, showGrid: Bool = false, activeBodyPart: SkinBodyPart? = nil, activeFace: SkinFace? = nil) -> [SCNMaterial] {
-        let faceOrder: [SkinFace] = [.right, .left, .top, .bottom, .front, .back]
-        return faceOrder.enumerated().map { (index, face) in
+        // SCNBox material order: front(+Z), right(+X), back(-Z), left(-X), top(+Y), bottom(-Y)
+        let faceOrder: [SkinFace] = [.front, .right, .back, .left, .top, .bottom]
+        let isActivePart = activeBodyPart != nil && bodyPart == activeBodyPart
+        return faceOrder.map { face in
             let material = SCNMaterial()
-            // DEBUG: Nummerierte Farben statt Texturen
-            if let debugImg = debugImage(index: index) {
-                material.diffuse.contents = debugImg
-                material.diffuse.magnificationFilter = .nearest
-                material.diffuse.minificationFilter = .nearest
-                material.diffuse.wrapS = .clamp
-                material.diffuse.wrapT = .clamp
+            let baseCanvas = project.extractRegion(bodyPart: bodyPart, face: face, layer: .base)
+            if let baseImage = baseCanvas.toCGImage(showGrid: showGrid) {
+                let overlayCanvas = project.extractRegion(bodyPart: bodyPart, face: face, layer: .overlay)
+                if let overlayImage = overlayCanvas.toCGImage(showGrid: showGrid) {
+                    let composited = Self.compositeImages(base: baseImage, overlay: overlayImage,
+                                                          width: baseCanvas.width, height: baseCanvas.height)
+                    material.diffuse.contents = composited ?? baseImage
+                } else {
+                    material.diffuse.contents = baseImage
+                }
             }
+            material.diffuse.magnificationFilter = .nearest
+            material.diffuse.minificationFilter = .nearest
+            material.diffuse.wrapS = .clamp
+            material.diffuse.wrapT = .clamp
             material.lightingModel = .blinn
             material.isDoubleSided = false
+            // Aktive Seite des aktiven Körperteils hervorheben
+            if isActivePart, let activeFace = activeFace, face == activeFace {
+                #if os(macOS)
+                material.emission.contents = NSColor(red: 0.0, green: 0.8, blue: 1.0, alpha: 1.0)
+                #else
+                material.emission.contents = UIColor(red: 0.0, green: 0.8, blue: 1.0, alpha: 1.0)
+                #endif
+                material.emission.intensity = 0.3
+            }
             return material
         }
     }

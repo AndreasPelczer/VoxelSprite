@@ -213,7 +213,8 @@ struct EntityPreviewView: View {
     // MARK: - Materials
 
     static func materialsForPart(_ part: EntityBodyPart, project: EntityProject, showGrid: Bool) -> [SCNMaterial] {
-        let faceOrder: [SkinFace] = [.right, .left, .top, .bottom, .front, .back]
+        // SCNBox material order: front(+Z), right(+X), back(-Z), left(-X), top(+Y), bottom(-Y)
+        let faceOrder: [SkinFace] = [.front, .right, .back, .left, .top, .bottom]
         return faceOrder.map { face in
             let material = SCNMaterial()
             let canvas = project.extractRegion(bodyPart: part, face: face)
